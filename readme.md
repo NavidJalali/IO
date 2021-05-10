@@ -7,11 +7,11 @@
 
 `npm install @navidjalali/io`
 
-## How to make a IO
+## How to make an IO
 
 You can make a new IO using one of the following ways:
 
-##### Lifting a pure value into a IO:
+##### Lifting a pure value into an IO:
 
 You can make a successful or failed lazy promise out of a pure value.
 
@@ -39,7 +39,7 @@ new IO<A>((resolve, reject) => {
 
 ##### From a thunk that returns a promise
 
-Any promise can be wrapped into a IO.
+Any promise can be wrapped into an IO.
 
 ```typescript
 IO.fromThunk(() => fetch('/api/v1/posts'))
@@ -57,7 +57,7 @@ const unsafeFunction = () => {
 IO.fromThunkSync(unsafeFunction))
 ```
 
-## How to evaluate a IO?
+## How to evaluate an IO?
 
 Simply call `.run()`. This will create a normal Promise.
 
@@ -70,7 +70,7 @@ You can schedule a lazy promise to run later using the `scheduleOnce` and `sched
 
 ## Retries
 
-You can retry a IO using a RetryPolicy. Currently you can only pick between `Spaced` and `ExponentialWithBackoff`
+You can retry an IO using a RetryPolicy. Currently you can only pick between `Spaced` and `ExponentialWithBackoff`
 
 ```typescript
 IO.fromThunk(() => fetch('/api/v1/posts'))
