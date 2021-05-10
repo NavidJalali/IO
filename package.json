@@ -1,0 +1,22 @@
+{
+  "name": "io",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NavidJalali/IO"
+  },
+  "version": "1.0.0",
+  "description": "Build promises without running them.",
+  "main": "lib/index.js",
+  "types": "lib",
+  "scripts": {
+    "build": "npx tsc -p .",
+    "check": "npx prettier --check 'src/**/*.{ts,tsx,js,jsx,json,yml,html}'",
+    "format": "npx prettier --write 'src/**/*.{ts,tsx,js,jsx,json,yml,html}'"
+  },
+  "author": "Navid Jalali",
+  "license": "ISC",
+  "devDependencies": {
+    "prettier": "2.3.0",
+    "typescript": "^4.2.4"
+  }
+}
