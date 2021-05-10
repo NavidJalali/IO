@@ -1,17 +1,17 @@
-# IO
+# 🍉 IO
 ### A small library that makes promises less eager 🥔
 
 `IO<A>` is a lightweight wrapper around `() => Promise<A>` with some useful combinators.
 
-## Installation
+## 🔧 Installation
 
 `npm install @navidjalali/io`
 
-## How to make an IO
+## ⚡️ How to make an IO
 
 You can make a new IO using one of the following ways:
 
-##### Lifting a pure value into an IO:
+##### 🏋🏻‍♂️ Lifting a pure value into an IO:
 
 You can make a successful or failed lazy promise out of a pure value.
 
@@ -28,7 +28,7 @@ IO.fromNull(maybeNull)
 IO.fromUndefined(maybeUndefined)
 ```
 
-##### Using the constructor:
+##### 👷🏻‍♂️ Using the constructor:
 This is very similar to creating a normal Promise.
 
 ```typescript
@@ -37,7 +37,7 @@ new IO<A>((resolve, reject) => {
 })
 ```
 
-##### From a thunk that returns a promise
+##### 🦆 From a thunk that returns a promise
 
 Any promise can be wrapped into an IO.
 
@@ -45,7 +45,7 @@ Any promise can be wrapped into an IO.
 IO.fromThunk(() => fetch('/api/v1/posts'))
 ```
 
-##### From a function
+##### 🍩 From a function
 
 Exceptions thrown by the function will be lifted into failures.
 
@@ -57,18 +57,18 @@ const unsafeFunction = () => {
 IO.fromThunkSync(unsafeFunction))
 ```
 
-## How to evaluate an IO?
+## 🤔 How to evaluate an IO?
 
 Simply call `.run()`. This will create a normal Promise.
 
-## Polling
+## ❓ Polling
 
 Any IO that will return some Union type  `A | InProgress` can be polled using `IO.poll`. This will rerun the IO until it succeeds with a result of type `A`.
 
-## Scheduling
+## ⏰ Scheduling
 You can schedule a lazy promise to run later using the `scheduleOnce` and `scheduleForever` combinators. You can also make more complicated scheduling logic yourself using `IO.sleep` and recursion.
 
-## Retries
+## 🔁 Retries
 
 You can retry an IO using a RetryPolicy. Currently you can only pick between `Spaced` and `ExponentialWithBackoff`
 
@@ -77,9 +77,9 @@ IO.fromThunk(() => fetch('/api/v1/posts'))
     .retry(RetryPolicies.spaced(100, 3))
 ```
 
-## Timeout
+## ⏳ Timeout
 
 You can effectively get a rejection if your effect runs longer than a specified period using the `timeout` combinator but please keep in mind that this *WILL NOT* cancel the Promise created from running this effect or interrupt its finalizers. Hopefully I will make this behaviour better soon.
 
-## More!
+## 🌈 More!
 There's more you can do. Feel free to check the code, and contribute if you find a new usecase that can be covered!
