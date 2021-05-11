@@ -298,7 +298,7 @@ export class IO<A> {
   }
 
   /**
-    Pass a effectful callback that will be unsafely run when the succeess value of this effect is ready.
+    Pass an effectful callback that will be unsafely run when the succeess value of this effect is ready.
     */
   tapM<B>(f: (a: A) => IO<B>): IO<A> {
     return IO.fromThunk(() =>
