@@ -38,7 +38,7 @@ export class IO<A> {
     Traverse an array of items with a function that produces an effect.
     */
   static foreachPar<B, C>(b: B[], f: (_: B) => IO<C>): IO<C[]> {
-    return IO.collectPar<C>(b.map(f))
+    return IO.collectPar<C>(b.map(_ => IO.safeInvoke(_, f)))
   }
 
   /**
@@ -62,7 +62,11 @@ export class IO<A> {
     */
   static fromThunk<B>(thunk: () => Promise<B>): IO<B> {
     return new IO<B>((resolve, reject) => {
-      thunk().then(resolve).catch(reject)
+      try {
+        thunk().then(resolve).catch(reject)
+      } catch (err) {
+        reject(err)
+      }
     })
   }
 
@@ -78,6 +82,17 @@ export class IO<A> {
         reject(error)
       }
     })
+  }
+
+  /**
+   Invoke a function that returns an effect. Exceptions will be lifted into failures.
+   */
+  static safeInvoke<B, C>(b: B, f: (_: B) => IO<C>): IO<C> {
+    try {
+      return f(b)
+    } catch (err) {
+      return IO.fail<C>(err)
+    }
   }
 
   /** 
@@ -303,7 +318,7 @@ export class IO<A> {
   tapM<B>(f: (a: A) => IO<B>): IO<A> {
     return IO.fromThunk(() =>
       this.thunk().then(res => {
-        f(res).run()
+        IO.safeInvoke(res, f).run()
         return res
       })
     )
@@ -329,11 +344,11 @@ export class IO<A> {
     return IO.fromThunk(() =>
       this.thunk()
         .then(res => {
-          success(res).run()
+          IO.safeInvoke(res, success).run()
           return res
         })
         .catch(err => {
-          failure(err).run()
+          IO.safeInvoke(err, failure).run()
           return Promise.reject(err)
         })
     )
@@ -352,7 +367,7 @@ export class IO<A> {
   tapErrorM<B>(f: (error: unknown) => IO<B>): IO<A> {
     return IO.fromThunk(() =>
       this.thunk().catch(err => {
-        f(err).run()
+        IO.safeInvoke(err, f).run()
         return Promise.reject(err)
       })
     )
