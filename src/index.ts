@@ -13,6 +13,11 @@ export interface Timed<A> {
   duration: number
 }
 
+export { RetryPolicies, RetryPolicy }
+export { Spaced }
+export { ExponentialWithBackoff }
+export { TimeoutError }
+
 export class IO<A> {
   private thunk: () => Promise<A>
 

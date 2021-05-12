@@ -4,10 +4,10 @@
     "type": "git",
     "url": "git+https://github.com/NavidJalali/IO.git"
   },
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Build promises without running them.",
   "main": "lib/index.js",
-  "types": "lib",
+  "types": "lib/index.d.ts",
   "scripts": {
     "build": "npx tsc -p .",
     "check": "npx prettier --check 'src/**/*.{ts,tsx,js,jsx,json,yml,html}'",
