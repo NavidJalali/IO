@@ -4,7 +4,7 @@
     "type": "git",
     "url": "git+https://github.com/NavidJalali/IO.git"
   },
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Build promises without running them.",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
