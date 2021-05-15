@@ -6,19 +6,14 @@ import { TimeoutError } from './models/TimeoutError'
 type Resolve<A> = (a: A | PromiseLike<A>) => void
 type Reject = (reason: unknown) => void
 
-export type InProgress = 'in_progress'
+type InProgress = 'in_progress'
 
-export interface Timed<A> {
+interface Timed<A> {
   result: A
   duration: number
 }
 
-export { RetryPolicies, RetryPolicy }
-export { Spaced }
-export { ExponentialWithBackoff }
-export { TimeoutError }
-
-export class IO<A> {
+class IO<A> {
   private thunk: () => Promise<A>
 
   constructor(body: (resolve: Resolve<A>, reject: Reject) => void) {
@@ -470,4 +465,15 @@ export class IO<A> {
       Promise.all([this.run(), right.run()]).then(tupled => tupled[1])
     )
   }
+}
+
+export {
+  IO,
+  InProgress,
+  Timed,
+  TimeoutError,
+  RetryPolicies,
+  RetryPolicy,
+  Spaced,
+  ExponentialWithBackoff
 }
