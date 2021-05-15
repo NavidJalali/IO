@@ -1,4 +1,9 @@
-import { ExponentialWithBackoff, RetryPolicies, RetryPolicy, Spaced } from './models/Retries'
+import {
+  ExponentialWithBackoff,
+  RetryPolicies,
+  RetryPolicy,
+  Spaced
+} from './models/Retries'
 import { TimeoutError } from './models/TimeoutError'
 
 type Resolve<A> = (a: A | PromiseLike<A>) => void
