@@ -23,6 +23,22 @@ class IO<A> {
     this.thunk = () => new Promise<A>(body)
   }
 
+  /**
+    Collect the result of running many effects sequantially in an array.
+   */
+  static collect<B>(promises: IO<B>[]): IO<B[]> {
+    const [x, ...xs] = promises
+    if (x) {
+      if (xs && xs.length > 0) {
+        return x.flatMap(b => IO.collect(xs).map(bs => [b, ...bs]))
+      } else {
+        return x.map(_ => [_])
+      }
+    } else {
+      return IO.succeed([])
+    }
+  }
+
   /** 
     Collect the result of running many effects in parallel in an array.
     */
@@ -138,6 +154,25 @@ class IO<A> {
     return IO.fromThunk(thunk)
   }
 
+  /**
+    An effect that succeeds with a unit value
+  */
+  static unit: IO<void> = IO.fromThunk(() => Promise.resolve())
+
+  /**
+    Equivalent to if(!p) effect
+  */
+  static unless<B>(p: boolean): (_: IO<B>) => IO<void> {
+    return effect => (p ? IO.unit : effect.ignore())
+  }
+
+  /**
+    Equivalent to if(p) effect
+   */
+  static when<B>(p: boolean): (_: IO<B>) => IO<void> {
+    return effect => (p ? effect.ignore() : IO.unit)
+  }
+
   /** 
     Retries a thunk that returns a promise using the specified RetryPolicy.
     This method is unsafe and will run the effect.
@@ -191,6 +226,23 @@ class IO<A> {
   }
 
   /**
+    Alias for zipRight.
+    Creates an effect which is the result of sequencing this effect and the given effect and
+    discarding the value produced by the former.
+    */
+  andThen<B>(right: IO<B>): IO<B> {
+    return this.zipRight(right)
+  }
+
+  /**
+    Creates an effect which is the result of sequencing the given effect and this effect
+    discarding the value produced by the former.
+    */
+  compose<B>(other: IO<B>): IO<A> {
+    return other.andThen(this)
+  }
+
+  /**
     Add a finalizer to this effect that will run regardless of failure or success.
     */
   ensuring(f: () => void): IO<A> {
@@ -226,6 +278,16 @@ class IO<A> {
   }
 
   /**
+    Returns a new effect that ignores the success or failure of this effect.
+   */
+  ignore(): IO<void> {
+    return this.foldM(
+      _ => IO.unit,
+      _ => IO.unit
+    )
+  }
+
+  /**
     Transform the success value of this effect.
     The transformation must be pure. For an effectful transformation use flatMap.
     */
@@ -237,9 +299,50 @@ class IO<A> {
     Transform the error produced by this effect.
     The transformation must be pure. For an effectful transformation use recoverWith.
     */
-  mapError<B>(f: (_: unknown) => B) {
+  mapError<B>(f: (_: unknown) => B): IO<A> {
     return IO.fromThunk(() =>
       this.thunk().catch(error => Promise.reject(f(error)))
+    )
+  }
+
+  /**
+    Executes this effect and returns its value, if it succeeds, but otherwise executes the specified effect.
+   */
+  orElse<B extends A>(other: IO<B>): IO<A> {
+    return this.recoverWith(_ => other)
+  }
+
+  /**
+    Executes this effect and returns its value, if it succeeds, but otherwise succeeds with the specified value.
+   */
+  orElseSucceed<B extends A>(b: B): IO<A> {
+    return this.orElse(IO.succeed(b))
+  }
+
+  /**
+    Executes this effect and returns its value, if it succeeds, but otherwise fails with the specified error.
+   */
+  orElseFail<B>(err: B): IO<A> {
+    return this.mapError(_ => err)
+  }
+
+  /**
+    Executes this effect and returns its value, if it succeeds, but otherwise succeeds with undefined.
+   */
+  orUndefined(): IO<A | undefined> {
+    return this.fold(
+      _ => undefined,
+      a => a
+    )
+  }
+
+  /**
+    Executes this effect and returns its value, if it succeeds, but otherwise succeeds with null.
+   */
+  orNull(): IO<A | null> {
+    return this.fold(
+      _ => null,
+      a => a
     )
   }
 
@@ -415,6 +518,20 @@ class IO<A> {
         })
       ])
     )
+  }
+
+  /**
+   Equivalent to if (!p) exp
+   */
+  unless(p: boolean): IO<void> {
+    return IO.unless(p)(this)
+  }
+
+  /**
+   Equivalent to if (p) exp
+   */
+  when(p: boolean): IO<void> {
+    return IO.when(p)(this)
   }
 
   /**
