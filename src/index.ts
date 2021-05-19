@@ -163,14 +163,14 @@ class IO<A> {
     Equivalent to if(!p) effect
   */
   static unless<B>(p: boolean): (_: IO<B>) => IO<void> {
-    return effect => (p ? IO.unit : effect.ignore())
+    return effect => (p ? IO.unit : effect.flatMap(_ => IO.unit))
   }
 
   /**
     Equivalent to if(p) effect
    */
   static when<B>(p: boolean): (_: IO<B>) => IO<void> {
-    return effect => (p ? effect.ignore() : IO.unit)
+    return effect => (p ? effect.flatMap(_ => IO.unit) : IO.unit)
   }
 
   /** 
