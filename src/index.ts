@@ -359,14 +359,14 @@ class IO<A> {
     Recovers from all errors with the given transformation. 
     The transformation must be pure. For an effectful transformation use recoverWith.
     */
-  recover(f: (err: unknown) => A): IO<A> {
+  recover<B>(f: (err: unknown) => B): IO<A | B> {
     return IO.fromThunk(() => this.thunk().catch(f))
   }
 
   /**
     Recovers from all errors with the given transformation.
     */
-  recoverWith(f: (err: unknown) => IO<A>): IO<A> {
+  recoverWith<B>(f: (err: unknown) => IO<B>): IO<A | B> {
     return IO.fromThunk(() => this.thunk().catch(err => f(err).run()))
   }
 
