@@ -16,6 +16,8 @@ interface Timed<A> {
   duration: number
 }
 
+const identity = <A>(a: A): A => a
+
 class IO<A> {
   private thunk: () => Promise<A>
 
@@ -114,6 +116,34 @@ class IO<A> {
     }
   }
 
+  /**
+    Schedule an effect to run periodically with the specified period.
+    You can also specify how many times you will allow the effect to fail before the schedule fails.
+    */
+  static scheduleForever<B>(effect: IO<B>): (ms: number, patience: number) => IO<never> {
+    return (ms, patience = 0): IO<never> => {
+      if (patience < 0) {
+        return IO.fail('Cannot schedule with negative patience')
+      }
+      return IO.sleep(ms)
+        .flatMap(() => effect.flatMap(_ => IO.scheduleForever(effect)(ms, patience)))
+        .recoverWith(error => {
+          if (patience === 0) {
+            return IO.fail(error)
+          } else {
+            return IO.scheduleForever(effect)(ms, patience - 1)
+          }
+        })
+    }
+  }
+
+  /**
+    Schedule an effect to run after the specified time.
+    */
+  static scheduleOnce<B>(effect: IO<B>): (ms: number) => IO<B> {
+    return ms => IO.sleep(ms).flatMap(() => effect)
+  }
+
   /** 
     Create an effect that succeeds after the specified time.
     */
@@ -143,7 +173,7 @@ class IO<A> {
         f.run().then(maybeResult => {
           if (maybeResult === 'in_progress') {
             setTimeout(() => {
-              thunk().then(a => resolve(a))
+              thunk().then(resolve)
             }, pollInterval)
           } else {
             resolve(maybeResult)
@@ -308,14 +338,14 @@ class IO<A> {
   /**
     Executes this effect and returns its value, if it succeeds, but otherwise executes the specified effect.
    */
-  orElse<B extends A>(other: IO<B>): IO<A> {
+  orElse<B>(other: IO<B>): IO<A | B> {
     return this.recoverWith(_ => other)
   }
 
   /**
     Executes this effect and returns its value, if it succeeds, but otherwise succeeds with the specified value.
    */
-  orElseSucceed<B extends A>(b: B): IO<A> {
+  orElseSucceed<B>(b: B): IO<A | B> {
     return this.orElse(IO.succeed(b))
   }
 
@@ -330,20 +360,14 @@ class IO<A> {
     Executes this effect and returns its value, if it succeeds, but otherwise succeeds with undefined.
    */
   orUndefined(): IO<A | undefined> {
-    return this.fold(
-      _ => undefined,
-      a => a
-    )
+    return this.fold(_ => undefined, identity)
   }
 
   /**
     Executes this effect and returns its value, if it succeeds, but otherwise succeeds with null.
    */
   orNull(): IO<A | null> {
-    return this.fold(
-      _ => null,
-      a => a
-    )
+    return this.fold(_ => null, identity)
   }
 
   /**
@@ -374,7 +398,7 @@ class IO<A> {
     Retry this effect with the given retry policy.
     */
   retry(policy: RetryPolicy): IO<A> {
-    return IO.fromThunk(() => IO.withRetries(this.thunk, policy))
+    return IO.fromThunk(() => IO.withRetries(this.run, policy))
   }
 
   /**
@@ -390,25 +414,14 @@ class IO<A> {
     You can also specify how many times you will allow the effect to fail before the schedule fails.
     */
   scheduleForever(ms: number, patience = 0): IO<never> {
-    if (patience < 0) {
-      return IO.fail('Cannot schedule with negative patience')
-    }
-    return IO.sleep(ms)
-      .flatMap(() => this.flatMap(_ => this.scheduleForever(ms, patience)))
-      .recoverWith(error => {
-        if (patience === 0) {
-          return IO.fail(error)
-        } else {
-          return this.scheduleForever(ms, patience - 1)
-        }
-      })
+    return IO.scheduleForever(this)(ms, patience)
   }
 
   /**
     Schedule this effect to run after the specified time.
     */
   scheduleOnce(ms: number): IO<A> {
-    return IO.sleep(ms).flatMap(() => this)
+    return IO.scheduleOnce(this)(ms)
   }
 
   /**
@@ -423,7 +436,7 @@ class IO<A> {
     */
   tapM<B>(f: (a: A) => IO<B>): IO<A> {
     return IO.fromThunk(() =>
-      this.thunk().then(res => {
+      this.run().then(res => {
         IO.safeInvoke(res, f).run()
         return res
       })
@@ -448,7 +461,7 @@ class IO<A> {
     failure: (err: unknown) => IO<C>
   ): IO<A> {
     return IO.fromThunk(() =>
-      this.thunk()
+      this.run()
         .then(res => {
           IO.safeInvoke(res, success).run()
           return res
@@ -472,7 +485,7 @@ class IO<A> {
     */
   tapErrorM<B>(f: (error: unknown) => IO<B>): IO<A> {
     return IO.fromThunk(() =>
-      this.thunk().catch(err => {
+      this.run().catch(err => {
         IO.safeInvoke(err, f).run()
         return Promise.reject(err)
       })
@@ -486,7 +499,7 @@ class IO<A> {
   timed(): IO<Timed<A>> {
     return IO.fromThunk(() => {
       const initial = Date.now()
-      return this.thunk()
+      return this.run()
         .then(result => ({
           result,
           duration: Date.now() - initial
@@ -509,7 +522,7 @@ class IO<A> {
   timeout(interval: number): IO<A> {
     return IO.fromThunk(() =>
       Promise.race([
-        this.thunk(),
+        this.run(),
         new Promise<A>((_, reject) => {
           const id = setTimeout(() => {
             clearTimeout(id)
