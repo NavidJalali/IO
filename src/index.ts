@@ -19,6 +19,9 @@ interface Timed<A> {
 class IO<A> {
   private thunk: () => Promise<A>
 
+  /**
+    Create an effect from a Promise like executor.
+   */
   constructor(body: (resolve: Resolve<A>, reject: Reject) => void) {
     this.thunk = () => new Promise<A>(body)
   }
@@ -246,14 +249,14 @@ class IO<A> {
     Add a finalizer to this effect that will run regardless of failure or success.
     */
   ensuring(f: () => void): IO<A> {
-    return IO.fromThunk(() => this.thunk().finally(f))
+    return IO.fromThunk(() => this.run().finally(f))
   }
 
   /** 
     Sequence another effect, using the success value of this effect.
     */
   flatMap<B>(f: (a: A) => IO<B>): IO<B> {
-    return IO.fromThunk(() => this.thunk().then(_ => f(_).run()))
+    return IO.fromThunk(() => this.run().then(_ => f(_).run()))
   }
 
   /** 
@@ -292,7 +295,7 @@ class IO<A> {
     The transformation must be pure. For an effectful transformation use flatMap.
     */
   map<B>(f: (a: A) => B): IO<B> {
-    return IO.fromThunk(() => this.thunk().then(f))
+    return IO.fromThunk(() => this.run().then(f))
   }
 
   /**
@@ -301,7 +304,7 @@ class IO<A> {
     */
   mapError<B>(f: (_: unknown) => B): IO<A> {
     return IO.fromThunk(() =>
-      this.thunk().catch(error => Promise.reject(f(error)))
+      this.run().catch(error => Promise.reject(f(error)))
     )
   }
 
@@ -359,15 +362,15 @@ class IO<A> {
     Recovers from all errors with the given transformation. 
     The transformation must be pure. For an effectful transformation use recoverWith.
     */
-  recover(f: (err: unknown) => A): IO<A> {
-    return IO.fromThunk(() => this.thunk().catch(f))
+  recover<B>(f: (err: unknown) => B): IO<A | B> {
+    return IO.fromThunk(() => this.run().catch(f))
   }
 
   /**
     Recovers from all errors with the given transformation.
     */
-  recoverWith(f: (err: unknown) => IO<A>): IO<A> {
-    return IO.fromThunk(() => this.thunk().catch(err => f(err).run()))
+  recoverWith<B>(f: (err: unknown) => IO<B>): IO<A | B> {
+    return IO.fromThunk(() => this.run().catch(err => f(err).run()))
   }
 
   /**
@@ -474,6 +477,27 @@ class IO<A> {
     return IO.fromThunk(() =>
       this.thunk().catch(err => {
         IO.safeInvoke(err, f).run()
+        return Promise.reject(err)
+      })
+    )
+  }
+
+  /**
+    Pass an effectful callback that will be unsafely run if the effect fails with a timeout.
+    */
+  tapTimeout<B>(f: (_: TimeoutError) => B): IO<A> {
+    return this.tapTimeoutM(err => IO.fromThunkSync(() => f(err)))
+  }
+
+  /**
+    Pass an effectful callback that will be unsafely run if the effect fails with a timeout.
+    */
+  tapTimeoutM<B>(f: (_: TimeoutError) => IO<B>): IO<A> {
+    return IO.fromThunk(() =>
+      this.run().catch(err => {
+        if(err instanceof TimeoutError) {
+          IO.safeInvoke(err, f).run()
+        }
         return Promise.reject(err)
       })
     )
