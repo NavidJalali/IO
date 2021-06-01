@@ -123,13 +123,17 @@ class IO<A> {
     Schedule an effect to run periodically with the specified period.
     You can also specify how many times you will allow the effect to fail before the schedule fails.
     */
-  static scheduleForever<B>(effect: IO<B>): (ms: number, patience: number) => IO<never> {
+  static scheduleForever<B>(
+    effect: IO<B>
+  ): (ms: number, patience: number) => IO<never> {
     return (ms, patience = 0): IO<never> => {
       if (patience < 0) {
         return IO.fail('Cannot schedule with negative patience')
       }
       return IO.sleep(ms)
-        .flatMap(() => effect.flatMap(_ => IO.scheduleForever(effect)(ms, patience)))
+        .flatMap(() =>
+          effect.flatMap(_ => IO.scheduleForever(effect)(ms, patience))
+        )
         .recoverWith(error => {
           if (patience === 0) {
             return IO.fail(error)
@@ -508,7 +512,7 @@ class IO<A> {
   tapTimeoutM<B>(f: (_: TimeoutError) => IO<B>): IO<A> {
     return IO.fromThunk(() =>
       this.run().catch(err => {
-        if(err instanceof TimeoutError) {
+        if (err instanceof TimeoutError) {
           IO.safeInvoke(err, f).run()
         }
         return Promise.reject(err)
