@@ -405,7 +405,7 @@ class IO<A> {
     Retry this effect with the given retry policy.
     */
   retry(policy: RetryPolicy): IO<A> {
-    return IO.fromThunk(() => IO.withRetries(this.run, policy))
+    return IO.fromThunk(() => IO.withRetries(this.thunk, policy))
   }
 
   /**
