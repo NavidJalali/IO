@@ -12,7 +12,7 @@
     "build": "npx tsc -p .",
     "check": "npx prettier --check 'src/**/*.{ts,tsx,js,jsx,json,yml,html}'",
     "format": "npx prettier --write 'src/**/*.{ts,tsx,js,jsx,json,yml,html}'",
-    "test": "jest"
+    "test": "jest --detectOpenHandles"
   },
   "author": "Navid Jalali",
   "license": "ISC",
