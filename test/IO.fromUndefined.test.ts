@@ -8,6 +8,6 @@ test("lifting null works", async () => {
     await expect(IO.fromUndefined(null).run()).resolves.toEqual(null);
 });
 
-test("lifting null fails", async () => {
+test("lifting undefined fails", async () => {
     await expect(IO.fromUndefined(undefined).run()).rejects.toEqual("Undefined encountered");
 });
