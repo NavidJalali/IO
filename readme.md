@@ -13,7 +13,7 @@ You can make a new IO using one of the following ways:
 
 ##### 🏋🏻‍♂️ Lifting a pure value into an IO:
 
-You can make a successful or failed lazy promise out of a pure value.
+You can make a successful or failed IO out of a pure value.
 
 ```typescript
 IO.succeed(value)
@@ -54,7 +54,7 @@ const unsafeFunction = () => {
     // Unsafe code
 }
 
-IO.fromThunkSync(unsafeFunction))
+IO.fromThunkSync(unsafeFunction)
 ```
 
 ## 🤔 How to evaluate an IO?
@@ -65,8 +65,16 @@ Simply call `.run()`. This will create a normal Promise.
 
 Any IO that will return some Union type  `A | InProgress` can be polled using `IO.poll`. This will rerun the IO until it succeeds with a result of type `A`.
 
+```typescript
+const checkProgress: IO<Result | InProgress> = IO.fromThunk(
+    () => fetch('/api/v1/progress/poll')
+).flatMap(_ => _.json())
+const result: IO<Result> = IO.poll(checkProgress, 100)
+
+```
+
 ## ⏰ Scheduling
-You can schedule a lazy promise to run later using the `scheduleOnce` and `scheduleForever` combinators. You can also make more complicated scheduling logic yourself using `IO.sleep` and recursion.
+You can schedule an IO to run later using the `scheduleOnce` and `scheduleForever` combinators. You can also make more complicated scheduling logic yourself using `IO.sleep` and recursion.
 
 ## 🔁 Retries
 
