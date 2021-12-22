@@ -1,51 +1,18 @@
 // Version 2 ideation file
-
-interface Tag {
-  typeTag: string
-}
-
-abstract class Cause<E> {
-  abstract tag: Tag
-}
-
-class Die extends Cause<never> {
-  constructor(error: unknown) {
-    super()
-    this.error = error
-  }
-
-  tag: Tag = {
-    typeTag: 'Die'
-  }
-
-  error: unknown
-}
-
-class Fail<E> extends Cause<E> {
-  constructor(error: E) {
-    super()
-    this.error = error
-  }
-
-  tag: Tag = {
-    typeTag: 'Fail'
-  }
-
-  error: E
-}
-
 abstract class IO<E, A> {
   abstract tag: Tag
 
-  static async<E1, A1>(register: (_: (_: IO<E1, A1>) => any) => void): IO<E1, A1> {
+  static async<E1, A1>(
+    register: (_: (_: IO<E1, A1>) => any) => void
+  ): IO<E1, A1> {
     return new Async(register)
   }
 
-  static succeed<B>(value: () => B): IO<never, B> { 
+  static succeed<B>(value: () => B): IO<never, B> {
     return new Effect(value)
   }
 
-  static fail<E1>(value: () => E1): IO<E1, never> { 
+  static fail<E1>(value: () => E1): IO<E1, never> {
     return new Failure(() => new Fail(value()))
   }
 
@@ -69,6 +36,14 @@ abstract class IO<E, A> {
     return this.flatMap(a => IO.succeedNow(f(a)))
   }
 
+  repeat(n: number): IO<E, A[]> {
+    if (n <= 0) {
+      return IO.succeedNow([])
+    } else {
+      return this.flatMap(a => this.repeat(n - 1).map(as => [a, ...as]))
+    }
+  }
+
   flatMap<B>(transformation: (_: A) => IO<E, B>): IO<E, B> {
     return new FlatMap(this, transformation)
   }
@@ -76,29 +51,49 @@ abstract class IO<E, A> {
   zip<B>(that: IO<E, B>): IO<E, [A, B]> {
     return this.flatMap(a => that.flatMap(b => IO.succeedNow([a, b])))
   }
+
+  zipRight<B>(that: IO<E, B>): IO<E, B> {
+    return this.zipWith(that)(t => t[1])
+  }
+
+  zipLeft<B>(that: IO<E, B>): IO<E, A> {
+    return this.zipWith(that)(t => t[0])
+  }
+
+  zipWith<B>(that: IO<E, B>): <C>(_: (_: [A, B]) => C) => IO<E, C> {
+    return f => this.flatMap(a => that.map(b => f([a, b])))
+  }
 }
 
-type Callback<A> = (_: A) => any    
+type Callback<A> = (_: A) => any
 
-type FiberState<E, A> = { 
-  success: A, 
-  failure: null,
-   state: 'success'
-  } | { 
-    success: null,
-     failure: E,
+type FiberState<E, A> =
+  | {
+      success: A
+      failure: null
+      state: 'success'
+    }
+  | {
+      success: null
+      failure: E
       state: 'failed'
-    } | { success: null,
-       failure: null,
-        state: 'pending'
-      } 
+    }
+  | { success: null; failure: null; state: 'pending' }
 
-class Fiber<E, A> {
+interface Fiber<E, A> {
+  join(): IO<E, A>
+  interrupt(): IO<E, A>
+}
 
+class FiberRuntime<E, A> implements Fiber<E, A> {
   constructor(effect: IO<E, A>) {
-    // gotta run async
+    // gotta run the effect without blocking, and get back the result
     // maybe web workers?
-    // call all callbacks
+    // call all callbacks with the result
+  }
+
+  interrupt(): IO<E, A> {
+    throw new Error('Method not implemented.')
   }
 
   fiberState: FiberState<E, A> = {
@@ -110,7 +105,7 @@ class Fiber<E, A> {
   callbacks: Callback<IO<E, A>>[] = []
 
   join(): IO<E, A> {
-    switch(this.fiberState.state) {
+    switch (this.fiberState.state) {
       case 'success': {
         return new Succeed(this.fiberState.success)
       }
@@ -192,43 +187,78 @@ class Effect<A> extends IO<never, A> {
 }
 
 class FlatMap<E, A, B> extends IO<E, B> {
-  constructor(effect: IO<E, A>, transformation: (_: A) => IO<E, B>) {
+  constructor(effect: IO<E, A>, continuation: (_: A) => IO<E, B>) {
     super()
     this.effect = effect
-    this.transformation = transformation
+    this.continuation = continuation
   }
 
   effect: IO<E, A>
-  transformation: (_: A) => IO<E, B>
+  continuation: (_: A) => IO<E, B>
 
   tag: Tag = {
     typeTag: 'FlatMap'
   }
 }
 
+function unsafeRunCause<E, A>(
+  io: IO<E, A>
+): (onSuccess: (_: A) => void, onFailure: (_: Cause<E>) => void) => void {
+  return (success, failure) => {
+    type Erased = IO<any, any>
+    type Continuation = (_: any) => Erased
 
-// Its probably better to make it into a promise E | A or even better some boxed union type
-const unsafeRunToPromise = <E, A>(io: IO<E, A>): Promise<A> => {
-  switch (io.tag.typeTag) {
-    case 'Succeed': {
-      return Promise.resolve((io as Succeed<A>).value)
+    const erased = <M, N>(typed: IO<M, N>): Erased => typed
+
+    const stack = new Stack<Continuation>()
+    let currentIO = erased(io)
+    let loop = true
+
+    const complete = (value: any) => {
+      if (stack.isEmpty()) {
+        loop = false
+        success(value as A)
+      } else {
+        const cont = stack.pop()!
+        currentIO = cont(value)
+      }
     }
 
-    case 'Effect': {
-      return new Promise<A>((resolve, reject) => {
-        try {
-          const result = (io as Effect<A>).thunk()
-          resolve(result)
-        } catch (error) {
-          reject(new Die(error))
+    while (loop) {
+      switch (currentIO.tag.typeTag) {
+        case 'Succeed': {
+          complete((currentIO as Succeed<any>).value)
+          break
         }
-      })
-    }
 
-    //... match on all IO types here
+        case 'Effect': {
+          try {
+            const result = (currentIO as Effect<any>).thunk()
+            complete(result)
+          } catch (error) {
+            failure(new Die(error))
+            loop = false
+          }
+          break
+        }
 
-    default: {
-      throw Error('Unknown IO type')
+        case 'FlatMap': {
+          const asFlatMap = currentIO as FlatMap<any, any, any>
+          stack.push(asFlatMap.continuation)
+          currentIO = asFlatMap.effect
+          break
+        }
+
+        case 'Failure': {
+          
+        }
+
+        //... match on all IO types here
+
+        default: {
+          throw Error('Unknown IO type')
+        }
+      }
     }
   }
 }
@@ -236,5 +266,3 @@ const unsafeRunToPromise = <E, A>(io: IO<E, A>): Promise<A> => {
 const t = IO.succeed(() => {
   console.log(3)
 })
-
-unsafeRunToPromise(t).then(console.log).catch(console.error)

@@ -1,0 +1,3 @@
+interface Tag {
+  typeTag: string
+}
