@@ -1,21 +1,26 @@
-abstract class Cause<E> {
+import { Tag } from "./Tag"
+
+export abstract class Cause<E> {
   abstract tag: Tag
+  abstract error: E | null
 }
 
-class Die extends Cause<never> {
+export class Die extends Cause<never> {
   constructor(error: unknown) {
     super()
-    this.error = error
+    this.reason = error
   }
 
   tag: Tag = {
     typeTag: 'Die'
   }
+  
+  error = null
 
-  error: unknown
+  reason: unknown
 }
 
-class Fail<E> extends Cause<E> {
+export class Fail<E> extends Cause<E> {
   constructor(error: E) {
     super()
     this.error = error

@@ -1,4 +1,4 @@
-abstract class List<A> {
+export abstract class List<A> {
   static fromArray<B>(as: B[]): List<B> {
     return List.of(as, as.length - 1)
   }
@@ -26,12 +26,13 @@ abstract class List<A> {
   abstract tailOption(): List<A> | null
   abstract isEmpty(): boolean
   abstract fold<B>(ifCons: (x: A, xs: List<A>) => B, ifNil: () => B): B
+  abstract foreach(_: (_: A) => any): void
   prepend(a: A): List<A> {
     return new Cons(a, this)
   }
 }
 
-class Cons<A> extends List<A> {
+export class Cons<A> extends List<A> {
   constructor(a: A, as: List<A>) {
     super()
     this.a = a
@@ -40,6 +41,11 @@ class Cons<A> extends List<A> {
 
   private a: A
   private as: List<A>
+
+  foreach(callback: (_: A) => any): void {
+    callback(this.a)
+    this.as.foreach(callback)
+  }
 
   head(): A {
     return this.a
@@ -66,7 +72,11 @@ class Cons<A> extends List<A> {
   }
 }
 
-class Nil extends List<never> {
+export class Nil extends List<never> {
+  foreach(_: (_: never) => any): void {
+    return
+  }
+
   head(): never {
     throw new Error('Head of empty List')
   }

@@ -1,4 +1,6 @@
-class Stack<A> {
+import { List, Nil } from "./List"
+
+export class Stack<A> {
   private list: List<A> = new Nil()
 
   push(a: A): void {

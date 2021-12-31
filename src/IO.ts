@@ -1,3 +1,8 @@
+import { Cause, Die, Fail } from "./models/Cause"
+import { Fiber, FiberRuntime } from "./models/Fiber"
+import { Stack } from "./models/Stack"
+import { Tag } from "./models/Tag"
+
 // Version 2 ideation file
 abstract class IO<E, A> {
   abstract tag: Tag
@@ -68,7 +73,7 @@ abstract class IO<E, A> {
       if (cause.tag.typeTag == 'Fail') {
         return failure((cause as Fail<E>).error)
       } else {
-        return new Failure(() => cause as Cause<P>)
+        return new Failure(() => cause as Die as Cause<P>)
       }
     })
   }
@@ -89,6 +94,10 @@ abstract class IO<E, A> {
     that: IO<E1, A1>
   ): <C>(_: (_: [A, A1]) => C) => IO<E | E1, C> {
     return f => this.flatMap(a => that.map(b => f([a, b])))
+  }
+
+  unsafeRunCause(success: (_: A) => any, failure: (_: Cause<E>) => any) {
+    unsafeRunCause(this)(success, failure)
   }
 }
 
@@ -245,7 +254,7 @@ function unsafeRunCause<E, A>(
           }
 
           case 'Failure': {
-            const asFailure = currentIO as Failure<any>
+            //const asFailure = currentIO as Failure<any>
             throw 'Not implemented'
             // TODO: What do?
             break
@@ -283,4 +292,7 @@ function unsafeRunCause<E, A>(
   }
 }
 
-const t = IO.succeed(() => 3)
+export {
+  IO,
+  Fiber
+}
