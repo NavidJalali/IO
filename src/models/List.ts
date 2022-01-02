@@ -43,8 +43,12 @@ export class Cons<A> extends List<A> {
   private as: List<A>
 
   foreach(callback: (_: A) => any): void {
-    callback(this.a)
-    this.as.foreach(callback)
+    let current: List<A> = this
+
+    while(!current.isEmpty()) {
+      callback(current.head())
+      current = current.tail()
+    }
   }
 
   head(): A {

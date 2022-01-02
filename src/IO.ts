@@ -61,7 +61,7 @@ abstract class IO<E, A> {
   }
 
   catchAll<E1, B>(f: (_: E) => IO<E1, B>): IO<E1, A | B> {
-    return this.foldIO <E1, A | B>(f, IO.succeedNow)
+    return this.foldIO<E1, A | B>(f, IO.succeedNow)
   }
 
   flatMap<E1, A1>(transformation: (_: A) => IO<E1, A1>): IO<E | E1, A1> {
@@ -75,7 +75,7 @@ abstract class IO<E, A> {
     return new Fold(this, failure, success)
   }
 
-  fold<B>(success: (_: A) => B, failure: (_: E) => B): IO<never, B> {
+  fold<B>(failure: (_: E) => B, success: (_: A) => B): IO<never, B> {
     return this.foldIO(
       e => IO.succeedNow(failure(e)),
       a => IO.succeedNow(success(a))
@@ -126,16 +126,28 @@ abstract class IO<E, A> {
     return new FiberContext(this)
   }
 
-  unsafeRun() {
-    return new Promise<A>((resolve, _) => {
-      const io = this.flatMap(a =>
-        IO.succeed(() => {
-          resolve(a)
-        })
-      )
-
-      io.unsafeRunFiber()
-    })
+  unsafeRun(): Promise<A> {
+    const fiber = this.unsafeRunFiber()
+    return fiber.executor.then(
+      result => {
+        if (result.isSuccess) {
+          return Promise.resolve(result.success)
+        } else {
+          const cause = result.failure
+          switch (cause.tag) {
+            case 'Fail': {
+              return Promise.reject(cause.error)
+            }
+            case 'Die': {
+              return Promise.reject(`FATAL ERROR: FIBER DIED: ${(cause as Die).reason}}`)
+            }
+            case 'Interrupt': {
+              return Promise.reject("Fiber interrupted.")
+            }
+          }
+        }
+      }
+    )
   }
 }
 

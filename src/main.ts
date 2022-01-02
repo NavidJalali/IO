@@ -1,9 +1,8 @@
 import { IO } from './IO'
 
+const t = IO.fail(() => 0)
 
-const t = (time: number) => new Promise<string>(resolve => {
-    setTimeout(() => resolve("Hello"), time)
-})
+t.unsafeRun().then(console.log).catch(e => console.error(`err: ${e}`))
 
-const t1 = new Date().getTime()
-IO.fromPromise(() => t(3000)).zipPar(IO.fromPromise(() => t(500))).unsafeRun().then(_ => console.log(_, new Date().getTime() - t1))
+// Fold, Fold, Failure
+
