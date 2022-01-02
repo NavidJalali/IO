@@ -1,26 +1,35 @@
-import { Cause, Die, Fail } from "./models/Cause"
-import { Fiber, FiberRuntime } from "./models/Fiber"
-import { Stack } from "./models/Stack"
-import { Tag } from "./models/Tag"
+import { Cause, Die, Fail } from './models/Cause'
+import { Fiber } from './models/Fiber'
+import { FiberContext } from './models/FiberContext'
+import { IOTypeTag } from './models/Tag'
 
 // Version 2 ideation file
 abstract class IO<E, A> {
-  abstract tag: Tag
+  abstract tag: IOTypeTag
 
-  static async<A1>(register: (_: (_: A1) => any) => void): IO<never, A1> {
+  static async<A1>(register: (_: (_: A1) => any) => any): IO<never, A1> {
     return new Async(register)
   }
 
   static succeed<B>(value: () => B): IO<never, B> {
-    return new Effect(value)
+    return new Succeed(value)
+  }
+
+  static unit(): IO<never, void> {
+    return new Succeed(() => {})
   }
 
   static fail<E1>(value: () => E1): IO<E1, never> {
     return new Failure(() => new Fail(value()))
   }
 
+  // Error channel is messed up
+  static fromPromise<B>(promise: () => Promise<B>): IO<never, B> {
+    return IO.succeed(promise).flatMap(p => IO.async<B>(complete => p.then(complete)))
+  }
+
   private static succeedNow<B>(value: B): IO<never, B> {
-    return new Succeed(value)
+    return new SucceedNow(value)
   }
 
   as<B>(that: () => B): IO<E, B> {
@@ -39,12 +48,20 @@ abstract class IO<E, A> {
     return this.flatMap(a => IO.succeedNow(f(a)))
   }
 
-  repeat(n: number): IO<E, A[]> {
+  repeat(n: number): IO<E, void> {
     if (n <= 0) {
-      return IO.succeedNow([])
+      return IO.unit()
     } else {
-      return this.flatMap(a => this.repeat(n - 1).map(as => [a, ...as]))
+      return this.flatMap(_ => this.repeat(n - 1))
     }
+  }
+
+  catchAllCause<E1, B>(f: (_: Cause<E>) => IO<E1, B>): IO<E1, A | B> {
+    return this.foldIOCause<E1, A | B>(f, IO.succeedNow)
+  }
+
+  catchAll<E1, B>(f: (_: E) => IO<E1, B>): IO<E1, A | B> {
+    return this.foldIO <E1, A | B>(f, IO.succeedNow)
   }
 
   flatMap<E1, A1>(transformation: (_: A) => IO<E1, A1>): IO<E | E1, A1> {
@@ -52,34 +69,43 @@ abstract class IO<E, A> {
   }
 
   foldIOCause<P, Q>(
-    success: (_: A) => IO<P, Q>,
-    failure: (_: Cause<E>) => IO<P, Q>
+    failure: (_: Cause<E>) => IO<P, Q>,
+    success: (_: A) => IO<P, Q>
   ): IO<P, Q> {
-    return new FoldIOCause(success, failure)
+    return new Fold(this, failure, success)
   }
 
   fold<B>(success: (_: A) => B, failure: (_: E) => B): IO<never, B> {
     return this.foldIO(
-      a => IO.succeed(() => success(a)),
-      e => IO.succeed(() => failure(e))
+      e => IO.succeedNow(failure(e)),
+      a => IO.succeedNow(success(a))
     )
   }
 
   foldIO<P, Q>(
-    success: (_: A) => IO<P, Q>,
-    failure: (_: E) => IO<P, Q>
+    failure: (_: E) => IO<P, Q>,
+    success: (_: A) => IO<P, Q>
   ): IO<P, Q> {
-    return this.foldIOCause(success, cause => {
-      if (cause.tag.typeTag == 'Fail') {
+    return this.foldIOCause(cause => {
+      if (cause.tag == 'Fail') {
         return failure((cause as Fail<E>).error)
       } else {
         return new Failure(() => cause as Die as Cause<P>)
       }
-    })
+    }, success)
   }
 
   zip<E1, A1>(that: IO<E1, A1>): IO<E | E1, [A, A1]> {
     return this.flatMap(a => that.flatMap(b => IO.succeedNow([a, b])))
+  }
+
+  zipPar<E1, A1>(that: IO<E1, A1>): IO<E | E1, [A, A1]> {
+    return this.fork().flatMap(
+      selfFiber => 
+        that.flatMap(b => 
+          selfFiber.join().map(a => [a, b])
+        )
+    )
   }
 
   zipRight<E1, A1>(that: IO<E1, A1>): IO<E | E1, A1> {
@@ -96,43 +122,54 @@ abstract class IO<E, A> {
     return f => this.flatMap(a => that.map(b => f([a, b])))
   }
 
-  unsafeRunCause(success: (_: A) => any, failure: (_: Cause<E>) => any) {
-    unsafeRunCause(this)(success, failure)
+  private unsafeRunFiber(): Fiber<E, A> {
+    return new FiberContext(this)
+  }
+
+  unsafeRun() {
+    return new Promise<A>((resolve, _) => {
+      const io = this.flatMap(a =>
+        IO.succeed(() => {
+          resolve(a)
+        })
+      )
+
+      io.unsafeRunFiber()
+    })
   }
 }
 
-class FoldIOCause<E, A, P, Q> extends IO<P, Q> {
+export class Fold<E, A, P, Q> extends IO<P, Q> {
   constructor(
+    io: IO<E, A>,
+    onFailure: (_: Cause<E>) => IO<P, Q>,
     onSuccess: (_: A) => IO<P, Q>,
-    onFailure: (_: Cause<E>) => IO<P, Q>
   ) {
     super()
+    this.io = io
     this.onSuccess = onSuccess
     this.onFailure = onFailure
   }
 
-  tag: Tag = {
-    typeTag: 'FoldIOCause'
-  }
+  tag: IOTypeTag = 'Fold'
 
+  io: IO<E, A>
   onSuccess: (_: A) => IO<P, Q>
   onFailure: (_: Cause<E>) => IO<P, Q>
 }
 
-class Async<A> extends IO<never, A> {
-  constructor(register: (_: (_: A) => any) => void) {
+export class Async<A> extends IO<never, A> {
+  constructor(register: (_: (_: A) => any) => any) {
     super()
     this.register = register
   }
 
-  register: (_: (_: A) => any) => void
+  register: (_: (_: A) => any) => any
 
-  tag: Tag = {
-    typeTag: 'Async'
-  }
+  tag: IOTypeTag = 'Async'
 }
 
-class Fork<E, A> extends IO<never, Fiber<E, A>> {
+export class Fork<E, A> extends IO<never, Fiber<E, A>> {
   constructor(effect: IO<E, A>) {
     super()
     this.effect = effect
@@ -140,12 +177,10 @@ class Fork<E, A> extends IO<never, Fiber<E, A>> {
 
   effect: IO<E, A>
 
-  tag: Tag = {
-    typeTag: 'Fork'
-  }
+  tag: IOTypeTag = 'Fork'
 }
 
-class Failure<E> extends IO<E, never> {
+export class Failure<E> extends IO<E, never> {
   constructor(cause: () => Cause<E>) {
     super()
     this.cause = cause
@@ -153,12 +188,10 @@ class Failure<E> extends IO<E, never> {
 
   cause: () => Cause<E>
 
-  tag: Tag = {
-    typeTag: 'Failure'
-  }
+  tag: IOTypeTag = 'Failure'
 }
 
-class Succeed<A> extends IO<never, A> {
+export class SucceedNow<A> extends IO<never, A> {
   constructor(a: A) {
     super()
     this.value = a
@@ -166,12 +199,10 @@ class Succeed<A> extends IO<never, A> {
 
   value: A
 
-  tag: Tag = {
-    typeTag: 'Succeed'
-  }
+  tag: IOTypeTag = 'SucceedNow'
 }
 
-class Effect<A> extends IO<never, A> {
+export class Succeed<A> extends IO<never, A> {
   constructor(a: () => A) {
     super()
     this.thunk = a
@@ -179,12 +210,10 @@ class Effect<A> extends IO<never, A> {
 
   thunk: () => A
 
-  tag: Tag = {
-    typeTag: 'Effect'
-  }
+  tag: IOTypeTag = 'Succeed'
 }
 
-class FlatMap<E0, E1, A0, A1> extends IO<E0 | E1, A1> {
+export class FlatMap<E0, E1, A0, A1> extends IO<E0 | E1, A1> {
   constructor(effect: IO<E0, A0>, continuation: (_: A0) => IO<E1, A1>) {
     super()
     this.effect = effect
@@ -194,105 +223,7 @@ class FlatMap<E0, E1, A0, A1> extends IO<E0 | E1, A1> {
   effect: IO<E0, A0>
   continuation: (_: A0) => IO<E1, A1>
 
-  tag: Tag = {
-    typeTag: 'FlatMap'
-  }
+  tag: IOTypeTag = 'FlatMap'
 }
 
-function unsafeRunCause<E, A>(
-  io: IO<E, A>
-): (_: (_: A) => any, __: (_: Cause<E>) => any) => void {
-  return (success, failure) => {
-    type Erased = IO<any, any>
-    type Continuation = (_: any) => Erased
-
-    const erased = <M, N>(typed: IO<M, N>): Erased => typed
-
-    const stack = new Stack<Continuation>()
-    let currentIO = erased(io)
-    let loop = true
-
-    const complete = (value: any) => {
-      if (stack.isEmpty()) {
-        loop = false
-        success(value as A)
-      } else {
-        const cont = stack.pop()!
-        currentIO = cont(value)
-      }
-    }
-
-    const resume = () => {
-      loop = true
-      run()
-    }
-
-    const run = () => {
-      while (loop) {
-        switch (currentIO.tag.typeTag) {
-          case 'Succeed': {
-            complete((currentIO as Succeed<any>).value)
-            break
-          }
-
-          case 'Effect': {
-            try {
-              const result = (currentIO as Effect<any>).thunk()
-              complete(result)
-            } catch (error) {
-              failure(new Die(error))
-              loop = false
-            }
-            break
-          }
-
-          case 'FlatMap': {
-            const asFlatMap = currentIO as FlatMap<any, any, any, any>
-            stack.push(asFlatMap.continuation)
-            currentIO = asFlatMap.effect
-            break
-          }
-
-          case 'Failure': {
-            //const asFailure = currentIO as Failure<any>
-            throw 'Not implemented'
-            // TODO: What do?
-            break
-          }
-
-          case 'Async': {
-            const async = currentIO as Async<any>
-            loop = false
-            if (stack.isEmpty()) {
-              async.register(success)
-            } else {
-              async.register(a => {
-                currentIO = new Succeed(a)
-                resume()
-              })
-            }
-            break
-          }
-
-          case 'Fork': {
-            const fork = currentIO as Fork<any, any>
-            const fiber = new FiberRuntime(fork.effect)
-            complete(fiber)
-            break
-          }
-
-          default: {
-            throw Error('Unknown IO type')
-          }
-        }
-      }
-    }
-
-    run()
-  }
-}
-
-export {
-  IO,
-  Fiber
-}
+export { IO, Fiber }

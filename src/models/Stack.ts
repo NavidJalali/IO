@@ -1,4 +1,4 @@
-import { List, Nil } from "./List"
+import { List, Nil } from './List'
 
 export class Stack<A> {
   private list: List<A> = new Nil()

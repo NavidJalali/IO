@@ -1,7 +1,7 @@
-import { Tag } from "./Tag"
+import { CauseTypeTag } from './Tag'
 
 export abstract class Cause<E> {
-  abstract tag: Tag
+  abstract tag: CauseTypeTag
   abstract error: E | null
 }
 
@@ -11,10 +11,8 @@ export class Die extends Cause<never> {
     this.reason = error
   }
 
-  tag: Tag = {
-    typeTag: 'Die'
-  }
-  
+  tag: CauseTypeTag = 'Die'
+
   error = null
 
   reason: unknown
@@ -26,9 +24,17 @@ export class Fail<E> extends Cause<E> {
     this.error = error
   }
 
-  tag: Tag = {
-    typeTag: 'Fail'
-  }
+  tag: CauseTypeTag = 'Fail'
 
   error: E
+}
+
+export class Interrupt extends Cause<never> {
+  constructor() {
+    super()
+  }
+
+  error = null
+
+  tag: CauseTypeTag = 'Interrupt'
 }
