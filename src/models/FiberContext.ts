@@ -20,9 +20,15 @@ type FiberState<E, A> =
   | { failure: Cause<E>; state: 'failed' }
   | { state: 'pending'; callbacks: List<Callback<E, A>> }
 
-const fiberSucceed = <A>(a: A): FiberResult<never, A> => ({ success: a, isSuccess: true })
+const fiberSucceed = <A>(a: A): FiberResult<never, A> => ({
+  success: a,
+  isSuccess: true
+})
 
-const fiberFail = <E>(cause: Cause<E>): FiberResult<E, never> => ({ failure: cause, isSuccess: false })
+const fiberFail = <E>(cause: Cause<E>): FiberResult<E, never> => ({
+  failure: cause,
+  isSuccess: false
+})
 
 type Erased = IO<any, any>
 
@@ -42,7 +48,7 @@ class Continuation {
 }
 
 export class FiberContext<E, A> implements Fiber<E, A> {
-  constructor(io: IO<E, A>) {    
+  constructor(io: IO<E, A>) {
     const erased = <M, N>(typed: IO<M, N>): Erased => typed
 
     const stack = new Stack<Continuation>()

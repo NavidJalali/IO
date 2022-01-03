@@ -4,9 +4,9 @@ export abstract class Cause<E> {
   abstract tag: CauseTypeTag
   abstract error: E | null
   abstract fold<A>(
-    ifFail: (_: E) => A,
-    ifDie: (_: unknown) => A,
-    ifInterrupt: () => A
+    ifFail: (_: Fail<E>) => A,
+    ifDie: (_: Die) => A,
+    ifInterrupt: (_: Interrupt) => A
   ): A
 }
 
@@ -22,8 +22,12 @@ export class Die extends Cause<never> {
 
   reason: unknown
 
-  fold<A>(_: (_: never) => A, ifDie: (_: unknown) => A, __: () => A): A {
-    return ifDie(this.reason)
+  fold<A>(
+    _: (_: Fail<never>) => A,
+    ifDie: (_: Die) => A,
+    __: (_: Interrupt) => A
+  ): A {
+    return ifDie(this)
   }
 }
 
@@ -37,8 +41,12 @@ export class Fail<E> extends Cause<E> {
 
   error: E
 
-  fold<A>(ifFail: (_: E) => A, _: (_: unknown) => A, __: () => A): A {
-    return ifFail(this.error)
+  fold<A>(
+    ifFail: (_: Fail<E>) => A,
+    _: (_: Die) => A,
+    __: (_: Interrupt) => A
+  ): A {
+    return ifFail(this)
   }
 }
 
@@ -51,7 +59,11 @@ export class Interrupt extends Cause<never> {
 
   tag: CauseTypeTag = 'Interrupt'
 
-  fold<A>(_: (_: never) => A, __: (_: unknown) => A, ifInterrupt: () => A): A {
-    return ifInterrupt()
+  fold<A>(
+    _: (_: Fail<never>) => A,
+    __: (_: Die) => A,
+    ifInterrupt: (_: Interrupt) => A
+  ): A {
+    return ifInterrupt(this)
   }
 }

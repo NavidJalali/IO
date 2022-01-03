@@ -50,14 +50,13 @@ abstract class IO<E, A> {
   }
 
   attempt(f: () => A): IO<unknown, A> {
-    return IO.succeedNow(f)
-      .flatMap(unsafe => {
-        try {
-          return IO.succeedNow(unsafe())
-        } catch (error) {
-          return IO.fail(() => error)
-        }
-      })
+    return IO.succeedNow(f).flatMap(unsafe => {
+      try {
+        return IO.succeedNow(unsafe())
+      } catch (error) {
+        return IO.fail(() => error)
+      }
+    })
   }
 
   catchAll<E1, B>(f: (_: E) => IO<E1, B>): IO<E1, A | B> {
@@ -113,13 +112,15 @@ abstract class IO<E, A> {
     failure: (_: E) => IO<P, Q>,
     success: (_: A) => IO<P, Q>
   ): IO<P, Q> {
-    return this.foldIOCause(cause => {
-      if (cause.tag == 'Fail') {
-        return failure((cause as Fail<E>).error)
-      } else {
-        return new Failure(() => cause as Die as Cause<P>)
-      }
-    }, success)
+    return this.foldIOCause(
+      cause =>
+        cause.fold(
+          e => failure(e.error),
+          die => IO.failCause(() => die),
+          interrupt => IO.failCause(() => interrupt)
+        ),
+      success
+    )
   }
 
   fork(): IO<never, Fiber<E, A>> {
@@ -127,7 +128,10 @@ abstract class IO<E, A> {
   }
 
   ignore(): IO<never, void> {
-    return this.foldIO(_ => IO.unit(), _ => IO.unit())
+    return this.foldIO(
+      _ => IO.unit(),
+      _ => IO.unit()
+    )
   }
 
   map<B>(f: (_: A) => B): IO<E, B> {
@@ -178,7 +182,8 @@ abstract class IO<E, A> {
     return this.flatMap(a => {
       try {
         f(a)
-      } finally {}
+      } finally {
+      }
       return IO.succeedNow(a)
     })
   }
