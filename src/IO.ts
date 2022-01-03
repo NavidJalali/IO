@@ -14,6 +14,10 @@ abstract class IO<E, A> {
     return new Succeed(value)
   }
 
+  static sleep(ms: number): IO<never, void> {
+    return IO.async(callback => setTimeout(() => callback(), ms))
+  }
+
   static unit(): IO<never, void> {
     return new Succeed(() => {})
   }

@@ -42,9 +42,7 @@ class Continuation {
 }
 
 export class FiberContext<E, A> implements Fiber<E, A> {
-  constructor(io: IO<E, A>) {
-    console.log(io);
-    
+  constructor(io: IO<E, A>) {    
     const erased = <M, N>(typed: IO<M, N>): Erased => typed
 
     const stack = new Stack<Continuation>()
@@ -156,23 +154,9 @@ export class FiberContext<E, A> implements Fiber<E, A> {
       }
     }
 
-    this.executor = new Promise<FiberResult<E, A>>((resolve, reject) => {
+    this.executor = new Promise<FiberResult<E, A>>(resolve => {
       run()
-      switch (this.fiberState.state) {
-        case 'success': {
-          resolve({ success: this.fiberState.success, isSuccess: true })
-          break
-        }
-
-        case 'failed': {
-          resolve({ failure: this.fiberState.failure, isSuccess: false })
-          break
-        }
-
-        case 'pending': {
-          reject('Internal defect: Dangling Fiber.')
-        }
-      }
+      this.await(resolve)
     })
   }
 
