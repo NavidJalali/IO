@@ -1,8 +1,6 @@
-import { IO } from './IO'
+// import { IO } from './IO'
 
-const t = IO.fail(() => 0)
-
-t.unsafeRun().then(console.log).catch(e => console.error(`err: ${e}`))
-
-// Fold, Fold, Failure
-
+// IO.sleep(5000)
+//     .map(_ => 12)
+//     .unsafeRun()
+//     .then(console.log)

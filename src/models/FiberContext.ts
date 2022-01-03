@@ -1,4 +1,13 @@
-import { Async, SucceedNow, FlatMap, Fold, Fork, IO, Succeed, Failure } from '../IO'
+import {
+  Async,
+  SucceedNow,
+  FlatMap,
+  Fold,
+  Fork,
+  IO,
+  Succeed,
+  Failure
+} from '../IO'
 import { Cause, Die } from './Cause'
 import { Fiber, FiberResult } from './Fiber'
 import { Cons, List, Nil } from './List'
@@ -11,13 +20,9 @@ type FiberState<E, A> =
   | { failure: Cause<E>; state: 'failed' }
   | { state: 'pending'; callbacks: List<Callback<E, A>> }
 
-const fiberSucceed = <A>(a: A): FiberResult<never, A> => { 
-  return { success: a, isSuccess: true }
-}
+const fiberSucceed = <A>(a: A): FiberResult<never, A> => ({ success: a, isSuccess: true })
 
-const fiberFail = <E>(cause: Cause<E>): FiberResult<E, never> => { 
-  return { failure: cause, isSuccess: false }
-}
+const fiberFail = <E>(cause: Cause<E>): FiberResult<E, never> => ({ failure: cause, isSuccess: false })
 
 type Erased = IO<any, any>
 
@@ -38,6 +43,8 @@ class Continuation {
 
 export class FiberContext<E, A> implements Fiber<E, A> {
   constructor(io: IO<E, A>) {
+    console.log(io);
+    
     const erased = <M, N>(typed: IO<M, N>): Erased => typed
 
     const stack = new Stack<Continuation>()
@@ -57,12 +64,12 @@ export class FiberContext<E, A> implements Fiber<E, A> {
     const findNextErrorHandler = (): Continuation | null => {
       let looping = true
       let errorHandler = null
-      while(looping) {
+      while (looping) {
         if (stack.isEmpty()) {
           looping = false
         } else {
           const continuation = stack.pop()!
-          if(continuation.errorHandler !== null) {
+          if (continuation.errorHandler !== null) {
             looping = false
             errorHandler = continuation
           }
@@ -109,7 +116,7 @@ export class FiberContext<E, A> implements Fiber<E, A> {
               this.complete(fiberFail(asFailure.cause() as Cause<E>))
               loop = false
             } else {
-              currentIO = errorHandler.errorHandler(asFailure.cause())                        
+              currentIO = errorHandler.errorHandler(asFailure.cause())
             }
             break
           }
@@ -121,7 +128,7 @@ export class FiberContext<E, A> implements Fiber<E, A> {
             break
           }
 
-          case 'Async': {            
+          case 'Async': {
             const async = currentIO as Async<any>
             loop = false
             if (stack.isEmpty()) {
@@ -153,15 +160,15 @@ export class FiberContext<E, A> implements Fiber<E, A> {
       run()
       switch (this.fiberState.state) {
         case 'success': {
-          resolve({success: this.fiberState.success, isSuccess: true})
+          resolve({ success: this.fiberState.success, isSuccess: true })
           break
         }
-  
-        case 'failed': {   
-          resolve({failure: this.fiberState.failure, isSuccess: false})
+
+        case 'failed': {
+          resolve({ failure: this.fiberState.failure, isSuccess: false })
           break
         }
-  
+
         case 'pending': {
           reject('Internal defect: Dangling Fiber.')
         }
@@ -178,12 +185,16 @@ export class FiberContext<E, A> implements Fiber<E, A> {
     switch (this.fiberState.state) {
       case 'success': {
         throw `Internal defect: Fiber cannot be completed multiple times. 
-        Fiber state was ${JSON.stringify(this.fiberState)}. Attempted to complete with ${JSON.stringify(result)}`
+        Fiber state was ${JSON.stringify(
+          this.fiberState
+        )}. Attempted to complete with ${JSON.stringify(result)}`
       }
 
-      case 'failed': {   
+      case 'failed': {
         throw `Internal defect: Fiber cannot be completed multiple times. 
-        Fiber state was ${JSON.stringify(this.fiberState)}. Attempted to complete with ${JSON.stringify(result)}`
+        Fiber state was ${JSON.stringify(
+          this.fiberState
+        )}. Attempted to complete with ${JSON.stringify(result)}`
       }
 
       case 'pending': {
@@ -238,15 +249,14 @@ export class FiberContext<E, A> implements Fiber<E, A> {
   }
 
   join(): IO<E, A> {
-    return IO.async<FiberResult<E, A>>(callback => this.await(callback))
-      .flatMap(
-        fiberRes => {
-          if (fiberRes.isSuccess === true) {
-            return new SucceedNow(fiberRes.success)
-          } else {
-            return new Failure(() => fiberRes.failure)
-          }
-        }
-      )
+    return IO.async<FiberResult<E, A>>(callback =>
+      this.await(callback)
+    ).flatMap(fiberRes => {
+      if (fiberRes.isSuccess === true) {
+        return new SucceedNow(fiberRes.success)
+      } else {
+        return new Failure(() => fiberRes.failure)
+      }
+    })
   }
 }

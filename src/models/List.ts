@@ -45,7 +45,7 @@ export class Cons<A> extends List<A> {
   foreach(callback: (_: A) => any): void {
     let current: List<A> = this
 
-    while(!current.isEmpty()) {
+    while (!current.isEmpty()) {
       callback(current.head())
       current = current.tail()
     }
