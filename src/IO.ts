@@ -2,13 +2,17 @@ import { Both, Cause, Die, Fail, Then } from './models/Cause'
 import { Exit } from './models/Exit'
 import { Fiber } from './models/Fiber'
 import { FiberContext } from './models/FiberContext'
-import { IOTypeTag } from './models/Tag'
+import { Tag, Tags } from './models/Tag'
 
 abstract class IO<E, A> {
-  abstract tag: IOTypeTag
+  abstract tag: Tag
 
   static async<A1>(register: (_: (_: A1) => any) => any): IO<never, A1> {
     return new Async(register)
+  }
+
+  static die(reason: unknown): IO<never, never> {
+    return new Failure(() => new Die(reason))
   }
 
   static succeed<B>(value: () => B): IO<never, B> {
@@ -292,7 +296,7 @@ export class Fold<E, A, P, Q> extends IO<P, Q> {
     this.onFailure = onFailure
   }
 
-  tag: IOTypeTag = 'Fold'
+  tag: Tag = Tags.fold
 
   io: IO<E, A>
   onSuccess: (_: A) => IO<P, Q>
@@ -307,7 +311,7 @@ export class Async<A> extends IO<never, A> {
 
   register: (_: (_: A) => any) => any
 
-  tag: IOTypeTag = 'Async'
+  tag: Tag = Tags.async
 }
 
 export class Fork<E, A> extends IO<never, Fiber<E, A>> {
@@ -318,7 +322,7 @@ export class Fork<E, A> extends IO<never, Fiber<E, A>> {
 
   effect: IO<E, A>
 
-  tag: IOTypeTag = 'Fork'
+  tag: Tag = Tags.fork
 }
 
 export class Failure<E> extends IO<E, never> {
@@ -329,7 +333,7 @@ export class Failure<E> extends IO<E, never> {
 
   cause: () => Cause<E>
 
-  tag: IOTypeTag = 'Failure'
+  tag: Tag = Tags.failure
 }
 
 export class SucceedNow<A> extends IO<never, A> {
@@ -340,7 +344,7 @@ export class SucceedNow<A> extends IO<never, A> {
 
   value: A
 
-  tag: IOTypeTag = 'SucceedNow'
+  tag: Tag = Tags.succeedNow
 }
 
 export class Succeed<A> extends IO<never, A> {
@@ -351,7 +355,7 @@ export class Succeed<A> extends IO<never, A> {
 
   thunk: () => A
 
-  tag: IOTypeTag = 'Succeed'
+  tag: Tag = Tags.succeed
 }
 
 export class FlatMap<E0, E1, A0, A1> extends IO<E0 | E1, A1> {
@@ -364,7 +368,7 @@ export class FlatMap<E0, E1, A0, A1> extends IO<E0 | E1, A1> {
   effect: IO<E0, A0>
   continuation: (_: A0) => IO<E1, A1>
 
-  tag: IOTypeTag = 'FlatMap'
+  tag: Tag = Tags.flatMap
 }
 
-export { IO, Fiber }
+export { IO, Exit }

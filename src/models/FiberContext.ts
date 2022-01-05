@@ -8,11 +8,12 @@ import {
   Succeed,
   Failure
 } from '../IO'
-import { Cause, Die } from './Cause'
+import { Cause } from './Cause'
 import { Exit } from './Exit'
 import { Fiber } from './Fiber'
 import { Cons, List, Nil } from './List'
 import { Stack } from './Stack'
+import { Tags } from './Tag'
 
 type Callback<E, A> = (_: Exit<E, A>) => any
 
@@ -79,73 +80,68 @@ export class FiberContext<E, A> implements Fiber<E, A> {
 
     const run = () => {
       while (loop) {
-        switch (currentIO.tag) {
-          case 'SucceedNow': {
-            continueLoop((currentIO as SucceedNow<any>).value)
-            break
-          }
+        try {
+          switch (currentIO.tag) {
+            case Tags.succeedNow: {
+              continueLoop((currentIO as SucceedNow<any>).value)
+              break
+            }
 
-          case 'Succeed': {
-            try {
+            case Tags.succeed: {
               const result = (currentIO as Succeed<any>).thunk()
               continueLoop(result)
-            } catch (error) {
-              this.complete(Exit.failCause(new Die(error)))
+              break
+            }
+
+            case Tags.flatMap: {
+              const asFlatMap = currentIO as FlatMap<any, any, any, any>
+              stack.push(new Continuation(asFlatMap.continuation))
+              currentIO = asFlatMap.effect
+              break
+            }
+
+            case Tags.failure: {
+              const cause = (currentIO as Failure<any>).cause()
+              const errorHandler = findNextErrorHandler()
+              if (errorHandler === null || errorHandler.errorHandler === null) {
+                this.complete(Exit.failCause(cause as Cause<E>))
+                loop = false
+              } else {
+                currentIO = errorHandler.errorHandler(cause)
+              }
+              break
+            }
+
+            case Tags.fold: {
+              const asFold = currentIO as Fold<any, any, any, any>
+              currentIO = asFold.io
+              stack.push(Continuation.fromFold(asFold))
+              break
+            }
+
+            case Tags.async: {
+              const async = currentIO as Async<any>
               loop = false
+              if (stack.isEmpty()) {
+                async.register(a => this.complete(Exit.succeed(a as A)))
+              } else {
+                async.register(a => {
+                  currentIO = new SucceedNow(a)
+                  resume()
+                })
+              }
+              break
             }
-            break
-          }
 
-          case 'FlatMap': {
-            const asFlatMap = currentIO as FlatMap<any, any, any, any>
-            stack.push(new Continuation(asFlatMap.continuation))
-            currentIO = asFlatMap.effect
-            break
-          }
-
-          case 'Failure': {
-            const asFailure = currentIO as Failure<any>
-            const errorHandler = findNextErrorHandler()
-            if (errorHandler === null || errorHandler.errorHandler === null) {
-              this.complete(Exit.failCause(asFailure.cause() as Cause<E>))
-              loop = false
-            } else {
-              currentIO = errorHandler.errorHandler(asFailure.cause())
+            case Tags.fork: {
+              const fork = currentIO as Fork<any, any>
+              const fiber = new FiberContext(fork.effect)
+              continueLoop(fiber)
+              break
             }
-            break
           }
-
-          case 'Fold': {
-            const asFold = currentIO as Fold<any, any, any, any>
-            currentIO = asFold.io
-            stack.push(Continuation.fromFold(asFold))
-            break
-          }
-
-          case 'Async': {
-            const async = currentIO as Async<any>
-            loop = false
-            if (stack.isEmpty()) {
-              async.register(a => this.complete(Exit.succeed(a as A)))
-            } else {
-              async.register(a => {
-                currentIO = new SucceedNow(a)
-                resume()
-              })
-            }
-            break
-          }
-
-          case 'Fork': {
-            const fork = currentIO as Fork<any, any>
-            const fiber = new FiberContext(fork.effect)
-            continueLoop(fiber)
-            break
-          }
-
-          default: {
-            throw Error('Unknown IO type')
-          }
+        } catch (error) {
+          currentIO = IO.die(error)
         }
       }
     }

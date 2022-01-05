@@ -1,8 +1,4 @@
-import { CauseTypeTag } from './Tag'
-
 export abstract class Cause<E> {
-  abstract tag: CauseTypeTag
-
   abstract fold<A>(
     ifFail: (_: Fail<E>) => A,
     ifDie: (_: Die) => A,
@@ -28,8 +24,6 @@ export class Die extends Cause<never> {
     this.reason = error
   }
 
-  tag: CauseTypeTag = 'Die'
-
   reason: unknown
 
   fold<A>(
@@ -52,8 +46,6 @@ export class Fail<E> extends Cause<E> {
     super()
     this.error = error
   }
-
-  tag: CauseTypeTag = 'Fail'
 
   error: E
 
@@ -78,8 +70,6 @@ export class Interrupt extends Cause<never> {
   }
 
   error = null
-
-  tag: CauseTypeTag = 'Interrupt'
 
   fold<A>(
     _: (_: Fail<never>) => A,
@@ -106,8 +96,6 @@ export class Then<E> extends Cause<E> {
   left: Cause<E>
   right: Cause<E>
 
-  tag: CauseTypeTag = 'Then'
-
   fold<A>(
     _: (_: Fail<E>) => A,
     __: (_: Die) => A,
@@ -132,8 +120,6 @@ export class Both<E> extends Cause<E> {
 
   left: Cause<E>
   right: Cause<E>
-
-  tag: CauseTypeTag = 'Both'
 
   fold<A>(
     _: (_: Fail<E>) => A,
