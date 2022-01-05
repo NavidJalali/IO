@@ -1,32 +1,57 @@
 export abstract class List<A> {
   static fromArray<B>(as: B[]): List<B> {
-    return List.of(as, as.length - 1)
+    let current: List<B> = new Nil()
+    for (let i = as.length - 1; i >= 0; i--) {
+      current = current.prepend(as[i]!)
+    }
+    return current
   }
 
-  private static of<B>(as: B[], start: number): List<B> {
-    if (start < 0 || start >= as.length) {
-      throw new Error('Index out of bounds.')
-    }
-
-    if (start == 0) {
-      return new Nil()
-    } else {
-      const a = as[start]
-      if (a) {
-        return new Cons(a, List.of(as, start - 1))
-      } else {
-        return List.of(as, start - 1)
-      }
-    }
-  }
+  protected abstract lastCons: Cons<A> | null
 
   abstract head(): A
   abstract headOption(): A | null
   abstract tail(): List<A>
   abstract tailOption(): List<A> | null
-  abstract isEmpty(): boolean
   abstract fold<B>(ifCons: (x: A, xs: List<A>) => B, ifNil: () => B): B
   abstract foreach(_: (_: A) => any): void
+  abstract map<B>(f: (_: A) => B): List<B>
+  abstract flatMap<B>(f: (_: A) => List<B>): List<B>
+  abstract length: number
+
+  last(): A {
+    if (this.lastCons) {
+      return this.lastCons.head()
+    } else {
+      throw 'Last of empty Lists'
+    }
+  }
+
+  lastOption(): A | null {
+    return this.lastCons ? this.lastCons.head() : null
+  }
+
+  toArray(): A[] {
+    const arr: A[] = []
+    this.foreach(a => arr.push(a))
+    return arr
+  }
+
+  isEmpty(): boolean {
+    return this.fold(
+      _ => false,
+      () => true
+    )
+  }
+
+  nonEmpty(): boolean {
+    return !this.isEmpty()
+  }
+
+  hasNext(): Boolean {
+    return !this.isEmpty()
+  }
+
   prepend(a: A): List<A> {
     return new Cons(a, this)
   }
@@ -37,10 +62,20 @@ export class Cons<A> extends List<A> {
     super()
     this.a = a
     this.as = as
+    this.length = as.length + 1
+
+    if (as.isEmpty()) {
+      this.lastCons = this
+    } else {
+      this.lastCons = (as as Cons<A>).lastCons
+    }
   }
 
-  private a: A
-  private as: List<A>
+  protected a: A
+  protected as: List<A>
+  protected lastCons: Cons<A>
+
+  length: number
 
   foreach(callback: (_: A) => any): void {
     let current: List<A> = this
@@ -63,12 +98,45 @@ export class Cons<A> extends List<A> {
     return this.as
   }
 
-  tailOption(): List<A> | null {
-    return this.as
+  map<B>(f: (_: A) => B): List<B> {
+    const nil = new Nil()
+    let current: List<A> = this.as
+    const head = new Cons(f(this.a), nil)
+
+    while (current.hasNext()) {
+      const newLast = new Cons(f(current.head()), nil)
+      head.lastCons.as = newLast
+      head.lastCons = newLast
+      current = current.tail()
+    }
+
+    return head
   }
 
-  isEmpty(): boolean {
-    return false
+  flatMap<B>(f: (_: A) => List<B>): List<B> {
+    let current = this.as
+    let head = f(this.a)
+
+    while (current.hasNext()) {
+      const newList = f(current.head())
+
+      if (head.isEmpty()) {
+        head = newList
+      } else {
+        if (newList.nonEmpty()) {
+          ;(head as Cons<B>).lastCons.as = newList
+          ;(head as Cons<B>).lastCons = (newList as Cons<B>).lastCons
+        }
+      }
+
+      current = current.tail()
+    }
+
+    return head
+  }
+
+  tailOption(): List<A> | null {
+    return this.as
   }
 
   fold<B>(ifCons: (x: A, xs: List<A>) => B, _: () => B): B {
@@ -77,6 +145,10 @@ export class Cons<A> extends List<A> {
 }
 
 export class Nil extends List<never> {
+  lastCons = null
+
+  length: number = 0
+
   foreach(_: (_: never) => any): void {
     return
   }
@@ -97,8 +169,12 @@ export class Nil extends List<never> {
     return null
   }
 
-  isEmpty(): boolean {
-    return true
+  map<B>(_: (_: never) => B): List<B> {
+    return this
+  }
+
+  flatMap<B>(_: (_: never) => List<B>): List<B> {
+    return this
   }
 
   fold<B>(_: (x: never, xs: List<never>) => B, ifNil: () => B): B {

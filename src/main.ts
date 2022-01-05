@@ -1,6 +1,7 @@
-import { IO } from './IO'
+import { List } from './models/List'
 
-IO.fromPromise(() => Promise.reject(1))
-  .mapError(_ => _ as number)
-  .unsafeRun()
-  .then(console.log)
+const l = List.fromArray([1, 2, 3, 4])
+
+console.log(l.toArray())
+//l.flatMap(_ => List.fromArray([1, 2]))
+console.log(l.flatMap(_ => List.fromArray([1, 2].map(i => i * _))).toArray())

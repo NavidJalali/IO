@@ -209,6 +209,10 @@ abstract class IO<E, A> {
     return new Fold(this, failure, success)
   }
 
+  forever(): IO<E, never> {
+    return this.zipRight(this.forever())
+  }
+
   fork(): IO<never, Fiber<E, A>> {
     return new Fork(this)
   }
@@ -502,4 +506,4 @@ export class FlatMap<E0, E1, A0, A1> extends IO<E0 | E1, A1> {
   tag: Tag = Tags.flatMap
 }
 
-export { IO, Exit }
+export { IO, Exit, Fiber }
