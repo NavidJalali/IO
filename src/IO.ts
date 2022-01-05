@@ -2,6 +2,11 @@ import { Both, Cause, Die, Fail, Then } from './models/Cause'
 import { Exit } from './models/Exit'
 import { Fiber } from './models/Fiber'
 import { FiberContext } from './models/FiberContext'
+import {
+  Interruptible,
+  InterruptStatus,
+  Uninterruptible
+} from './models/InterruptStatus'
 import { Tag, Tags } from './models/Tag'
 
 abstract class IO<E, A> {
@@ -127,16 +132,10 @@ abstract class IO<E, A> {
     return this.foldCauseIO<E1, A | B>(f, IO.succeedNow)
   }
 
-  ensuring(f: () => void): IO<E, A> {
+  ensuring(finalizer: IO<never, any>): IO<E, A> {
     return this.foldCauseIO(
-      cause => {
-        f()
-        return IO.failCause(() => cause)
-      },
-      success => {
-        f()
-        return IO.succeedNow(success)
-      }
+      cause => finalizer.zipRight(IO.failCausePure(cause)),
+      success => finalizer.zipRight(IO.succeedNow(success))
     )
   }
 
@@ -222,6 +221,18 @@ abstract class IO<E, A> {
       _ => IO.unit(),
       _ => IO.unit()
     )
+  }
+
+  interruptStatus(flag: InterruptStatus): IO<E, A> {
+    return new SetInterruptStatus(this, flag)
+  }
+
+  interruptible(): IO<E, A> {
+    return this.interruptStatus(Interruptible)
+  }
+
+  uninterruptible(): IO<E, A> {
+    return this.interruptStatus(Uninterruptible)
   }
 
   map<B>(f: (_: A) => B): IO<E, B> {
@@ -458,6 +469,19 @@ export class Fork<E, A> extends IO<never, Fiber<E, A>> {
   effect: IO<E, A>
 
   tag: Tag = Tags.fork
+}
+
+export class SetInterruptStatus<E, A> extends IO<E, A> {
+  constructor(effect: IO<E, A>, interruptStatus: InterruptStatus) {
+    super()
+    this.effect = effect
+    this.status = interruptStatus
+  }
+
+  status: InterruptStatus
+  effect: IO<E, A>
+
+  tag: Tag = Tags.setInterruptStatus
 }
 
 export class Failure<E> extends IO<E, never> {

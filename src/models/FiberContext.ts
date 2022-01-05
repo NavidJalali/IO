@@ -6,9 +6,10 @@ import {
   Fork,
   IO,
   Succeed,
-  Failure
+  Failure,
+  SetInterruptStatus
 } from '../IO'
-import { Cause } from './Cause'
+import { Cause, Interrupt } from './Cause'
 import { Exit } from './Exit'
 import { Fiber } from './Fiber'
 import { Cons, List, Nil } from './List'
@@ -80,68 +81,94 @@ export class FiberContext<E, A> implements Fiber<E, A> {
 
     const run = () => {
       while (loop) {
-        try {
-          switch (currentIO.tag) {
-            case Tags.succeedNow: {
-              continueLoop((currentIO as SucceedNow<any>).value)
-              break
-            }
+        if (this.shouldInterrupt()) {
+          this.isInterrupting = true
 
-            case Tags.succeed: {
-              const result = (currentIO as Succeed<any>).thunk()
-              continueLoop(result)
-              break
-            }
-
-            case Tags.flatMap: {
-              const asFlatMap = currentIO as FlatMap<any, any, any, any>
-              stack.push(new Continuation(asFlatMap.continuation))
-              currentIO = asFlatMap.effect
-              break
-            }
-
-            case Tags.failure: {
-              const cause = (currentIO as Failure<any>).cause()
-              const errorHandler = findNextErrorHandler()
-              if (errorHandler === null || errorHandler.errorHandler === null) {
-                this.complete(Exit.failCause(cause as Cause<E>))
-                loop = false
-              } else {
-                currentIO = errorHandler.errorHandler(cause)
-              }
-              break
-            }
-
-            case Tags.fold: {
-              const asFold = currentIO as Fold<any, any, any, any>
-              currentIO = asFold.io
-              stack.push(Continuation.fromFold(asFold))
-              break
-            }
-
-            case Tags.async: {
-              const async = currentIO as Async<any>
-              loop = false
-              if (stack.isEmpty()) {
-                async.register(a => this.complete(Exit.succeed(a as A)))
-              } else {
-                async.register(a => {
-                  currentIO = new SucceedNow(a)
-                  resume()
-                })
-              }
-              break
-            }
-
-            case Tags.fork: {
-              const fork = currentIO as Fork<any, any>
-              const fiber = new FiberContext(fork.effect)
-              continueLoop(fiber)
-              break
-            }
+          if (currentIO.tag === Tags.fold) {
+            stack.push(
+              Continuation.fromFold(currentIO as Fold<any, any, any, any>)
+            )
+          } else {
+            stack.push(new Continuation(_ => currentIO))
           }
-        } catch (error) {
-          currentIO = IO.die(error)
+          currentIO = IO.failCausePure(new Interrupt())
+        } else {
+          try {
+            switch (currentIO.tag) {
+              case Tags.succeedNow: {
+                continueLoop((currentIO as SucceedNow<any>).value)
+                break
+              }
+
+              case Tags.succeed: {
+                const result = (currentIO as Succeed<any>).thunk()
+                continueLoop(result)
+                break
+              }
+
+              case Tags.flatMap: {
+                const asFlatMap = currentIO as FlatMap<any, any, any, any>
+                stack.push(new Continuation(asFlatMap.continuation))
+                currentIO = asFlatMap.effect
+                break
+              }
+
+              case Tags.failure: {
+                const cause = (currentIO as Failure<any>).cause()
+                const errorHandler = findNextErrorHandler()
+                if (
+                  errorHandler === null ||
+                  errorHandler.errorHandler === null
+                ) {
+                  this.complete(Exit.failCause(cause as Cause<E>))
+                  loop = false
+                } else {
+                  currentIO = errorHandler.errorHandler(cause)
+                }
+                break
+              }
+
+              case Tags.fold: {
+                const asFold = currentIO as Fold<any, any, any, any>
+                currentIO = asFold.io
+                stack.push(Continuation.fromFold(asFold))
+                break
+              }
+
+              case Tags.async: {
+                const async = currentIO as Async<any>
+                loop = false
+                if (stack.isEmpty()) {
+                  async.register(a => this.complete(Exit.succeed(a as A)))
+                } else {
+                  async.register(a => {
+                    currentIO = new SucceedNow(a)
+                    resume()
+                  })
+                }
+                break
+              }
+
+              case Tags.setInterruptStatus: {
+                const setInterrupt = currentIO as SetInterruptStatus<any, any>
+                const oldInterruptible = this.isInterruptible
+                this.isInterruptible = setInterrupt.status.isInterruptible
+                currentIO = setInterrupt.effect.ensuring(
+                  IO.succeed(() => (this.isInterruptible = oldInterruptible))
+                )
+                break
+              }
+
+              case Tags.fork: {
+                const fork = currentIO as Fork<any, any>
+                const fiber = new FiberContext(fork.effect)
+                continueLoop(fiber)
+                break
+              }
+            }
+          } catch (error) {
+            currentIO = IO.die(error)
+          }
         }
       }
     }
@@ -150,6 +177,14 @@ export class FiberContext<E, A> implements Fiber<E, A> {
       run()
       this.await(resolve)
     })
+  }
+
+  private interrupted = false
+  private isInterrupting = false
+  private isInterruptible = false
+
+  private shouldInterrupt() {
+    return this.interrupted && !this.isInterrupting && this.isInterruptible
   }
 
   private fiberState: FiberState<E, A> = {
@@ -195,8 +230,10 @@ export class FiberContext<E, A> implements Fiber<E, A> {
 
   executor: Promise<Exit<E, A>>
 
-  interrupt(): IO<never, A> {
-    throw new Error('Method not implemented.')
+  interrupt(): IO<never, void> {
+    return IO.succeed(() => {
+      this.interrupted = true
+    })
   }
 
   join(): IO<E, A> {

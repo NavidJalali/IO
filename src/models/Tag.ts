@@ -5,7 +5,8 @@ export const Tags: { [k in name]: Tag } = {
   failure: 3,
   async: 4,
   flatMap: 5,
-  fork: 6
+  fork: 6,
+  setInterruptStatus: 7
 }
 
 export type name =
@@ -16,4 +17,6 @@ export type name =
   | 'async'
   | 'flatMap'
   | 'fork'
-export type Tag = 0 | 1 | 2 | 3 | 4 | 5 | 6
+  | 'setInterruptStatus'
+
+export type Tag = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7

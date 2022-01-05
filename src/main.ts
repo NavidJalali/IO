@@ -1,7 +1,8 @@
-import { List } from './models/List'
+import { IO } from './IO'
 
-const l = List.fromArray([1, 2, 3, 4])
+const t = IO.succeed(() => console.log('HOWDY'))
+  .forever()
+  .fork()
+  .flatMap(f => IO.sleep(2000).zipRight(f.interrupt()))
 
-console.log(l.toArray())
-//l.flatMap(_ => List.fromArray([1, 2]))
-console.log(l.flatMap(_ => List.fromArray([1, 2].map(i => i * _))).toArray())
+t.unsafeRun()
