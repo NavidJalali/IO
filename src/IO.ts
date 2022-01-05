@@ -11,6 +11,16 @@ abstract class IO<E, A> {
     return new Async(register)
   }
 
+  static attempt<B>(f: () => B): IO<unknown, B> {
+    return IO.succeedNow(f).flatMap(unsafe => {
+      try {
+        return IO.succeedNow(unsafe())
+      } catch (error) {
+        return IO.fail(() => error)
+      }
+    })
+  }
+
   static die(reason: unknown): IO<never, never> {
     return new Failure(() => new Die(reason))
   }
@@ -42,11 +52,20 @@ abstract class IO<E, A> {
     )
   }
 
-  // Error channel is messed up
-  static fromPromise<B>(promise: () => Promise<B>): IO<never, B> {
-    return IO.succeed(promise).flatMap(p =>
-      IO.async<B>(complete => p.then(complete))
-    )
+  static fromPromise<B>(promise: () => Promise<B>): IO<unknown, B> {
+    return IO.succeed(promise)
+      .flatMap(p =>
+        IO.async<Exit<unknown, B>>(complete =>
+          p
+            .then(result => complete(Exit.succeed(result)))
+            .catch(error => complete(Exit.fail(error)))
+        )
+      )
+      .flatMap(IO.fromExit)
+  }
+
+  static scheduleOnce<E1, A1>(effect: IO<E1, A1>): (ms: number) => IO<E1, A1> {
+    return ms => IO.sleep(ms).flatMap(() => effect)
   }
 
   private static succeedNow<B>(value: B): IO<never, B> {
@@ -59,16 +78,6 @@ abstract class IO<E, A> {
 
   asPure<B>(b: B): IO<E, B> {
     return this.map(_ => b)
-  }
-
-  attempt(f: () => A): IO<unknown, A> {
-    return IO.succeedNow(f).flatMap(unsafe => {
-      try {
-        return IO.succeedNow(unsafe())
-      } catch (error) {
-        return IO.fail(() => error)
-      }
-    })
   }
 
   catchAll<E1, B>(f: (_: E) => IO<E1, B>): IO<E1, A | B> {

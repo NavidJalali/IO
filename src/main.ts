@@ -1,6 +1,6 @@
 import { IO } from './IO'
 
-IO.sleep(100)
+IO.fromPromise(() => Promise.resolve(1))
   .zipRight(
     IO.succeed(() => {
       throw 'Dick'
