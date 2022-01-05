@@ -33,8 +33,16 @@ abstract class IO<E, A> {
     return this.failCause(() => new Fail(error()))
   }
 
+  static failPure<E1>(error: E1): IO<E1, never> {
+    return this.failCause(() => new Fail(error))
+  }
+
   static failCause<E1>(error: () => Cause<E1>): IO<E1, never> {
     return new Failure(error)
+  }
+
+  static failCausePure<E1>(error: Cause<E1>): IO<E1, never> {
+    return new Failure(() => error)
   }
 
   static fromCallbacks<E1, A1>(
@@ -91,6 +99,10 @@ abstract class IO<E, A> {
     return new Succeed(value)
   }
 
+  static succeedPure<B>(value: B): IO<never, B> {
+    return IO.succeedNow(value)
+  }
+
   static sleep(ms: number): IO<never, void> {
     return IO.async(callback => setTimeout(() => callback(), ms))
   }
@@ -112,11 +124,11 @@ abstract class IO<E, A> {
   }
 
   catchAllCause<E1, B>(f: (_: Cause<E>) => IO<E1, B>): IO<E1, A | B> {
-    return this.foldIOCause<E1, A | B>(f, IO.succeedNow)
+    return this.foldCauseIO<E1, A | B>(f, IO.succeedNow)
   }
 
   ensuring(f: () => void): IO<E, A> {
-    return this.foldIOCause(
+    return this.foldCauseIO(
       cause => {
         f()
         return IO.failCause(() => cause)
@@ -132,13 +144,6 @@ abstract class IO<E, A> {
     return new FlatMap(this, f)
   }
 
-  foldIOCause<P, Q>(
-    failure: (_: Cause<E>) => IO<P, Q>,
-    success: (_: A) => IO<P, Q>
-  ): IO<P, Q> {
-    return new Fold(this, failure, success)
-  }
-
   fold<B>(failure: (_: E) => B, success: (_: A) => B): IO<never, B> {
     return this.foldIO(
       e => IO.succeedNow(failure(e)),
@@ -150,7 +155,7 @@ abstract class IO<E, A> {
     failure: (_: Cause<E>) => B,
     success: (_: A) => B
   ): IO<never, B> {
-    return this.foldIOCause(
+    return this.foldCauseIO(
       c => IO.succeedNow(failure(c)),
       a => IO.succeedNow(success(a))
     )
@@ -160,7 +165,7 @@ abstract class IO<E, A> {
     failure: (_: E) => IO<P, Q>,
     success: (_: A) => IO<P, Q>
   ): IO<P, Q> {
-    return this.foldIOCause(
+    return this.foldCauseIO(
       cause =>
         cause.fold(
           e => failure(e.error),
@@ -169,11 +174,11 @@ abstract class IO<E, A> {
           then =>
             IO.failCause(() => then.left)
               .foldIO(failure, success)
-              .foldIOCause(
+              .foldCauseIO(
                 left =>
                   IO.failCause(() => then.right)
                     .foldIO(failure, success)
-                    .foldIOCause(
+                    .foldCauseIO(
                       right => IO.failCause(() => new Then(left, right)),
                       IO.succeedNow
                     ),
@@ -182,11 +187,11 @@ abstract class IO<E, A> {
           both =>
             IO.failCause(() => both.left)
               .foldIO(failure, success)
-              .foldIOCause(
+              .foldCauseIO(
                 left =>
                   IO.failCause(() => both.right)
                     .foldIO(failure, success)
-                    .foldIOCause(
+                    .foldCauseIO(
                       right => IO.failCause(() => new Both(left, right)),
                       IO.succeedNow
                     ),
@@ -195,6 +200,13 @@ abstract class IO<E, A> {
         ),
       success
     )
+  }
+
+  foldCauseIO<P, Q>(
+    failure: (_: Cause<E>) => IO<P, Q>,
+    success: (_: A) => IO<P, Q>
+  ): IO<P, Q> {
+    return new Fold(this, failure, success)
   }
 
   fork(): IO<never, Fiber<E, A>> {
@@ -253,20 +265,88 @@ abstract class IO<E, A> {
   }
 
   tap(f: (a: A) => void): IO<E, A> {
-    return this.flatMap(a => {
-      try {
-        f(a)
-      } finally {
-      }
-      return IO.succeedNow(a)
-    })
+    return this.tapIO(a => IO.succeed(() => f(a)))
   }
 
-  tapIO(f: (a: A) => IO<any, any>): IO<E, A> {
-    return this.flatMap(a => {
-      f(a).unsafeRun()
-      return IO.succeedNow(a)
-    })
+  tapIO<E1, A1>(f: (a: A) => IO<E1, A1>): IO<E, A> {
+    return this.flatMap(a => f(a).ignore().zipRightPar(IO.succeedNow(a)))
+  }
+
+  tapBoth<A1, A2>(onSuccess: (_: A) => A1, onFailure: (_: E) => A2): IO<E, A> {
+    return this.tapBothIO(
+      a => IO.succeed(() => onSuccess(a)),
+      e => IO.succeed(() => onFailure(e))
+    )
+  }
+
+  tapBothIO<E1, A1, E2, A2>(
+    onSuccess: (_: A) => IO<E1, A1>,
+    onFailure: (_: E) => IO<E2, A2>
+  ): IO<E, A> {
+    const computeIfError = <B, C>(
+      cause: Cause<B>,
+      f: (_: B) => C,
+      g: (_: Cause<B>) => C,
+      monoidC: (a: C, b: C) => C
+    ): C =>
+      cause.fold(
+        fail => f(fail.error),
+        die => g(die),
+        interrupt => g(interrupt),
+        then =>
+          monoidC(
+            computeIfError(then.left, f, g, monoidC),
+            computeIfError(then.right, f, g, monoidC)
+          ),
+        both =>
+          monoidC(
+            computeIfError(both.left, f, g, monoidC),
+            computeIfError(both.right, f, g, monoidC)
+          )
+      )
+    return this.tapBothCauseIO(onSuccess, cause =>
+      cause
+        .fold(
+          fail => onFailure(fail.error).ignore(),
+          _ => IO.unit(),
+          _ => IO.unit(),
+          then =>
+            computeIfError(
+              then,
+              e => onFailure(e).ignore(),
+              _ => IO.unit(),
+              (a, b) => a.zipPar(b).ignore()
+            ),
+          both =>
+            computeIfError(
+              both,
+              e => onFailure(e).ignore(),
+              _ => IO.unit(),
+              (a, b) => a.zipPar(b).ignore()
+            )
+        )
+        .zipRightPar(IO.failCausePure(cause))
+    )
+  }
+
+  tapBothCause<A1, A2>(
+    onSuccess: (_: A) => A1,
+    onFailure: (_: Cause<E>) => A2
+  ): IO<E, A> {
+    return this.tapBothCauseIO(
+      a => IO.succeed(() => onSuccess(a)),
+      cause => IO.succeed(() => onFailure(cause))
+    )
+  }
+
+  tapBothCauseIO<E1, A1, E2, A2>(
+    onSuccess: (_: A) => IO<E1, A1>,
+    onFailure: (_: Cause<E>) => IO<E2, A2>
+  ): IO<E, A> {
+    return this.foldCauseIO(
+      cause => onFailure(cause).ignore().zipRightPar(IO.failCausePure(cause)),
+      success => onSuccess(success).ignore().zipRightPar(IO.succeedNow(success))
+    )
   }
 
   zip<E1, A1>(that: IO<E1, A1>): IO<E | E1, [A, A1]> {
@@ -274,23 +354,38 @@ abstract class IO<E, A> {
   }
 
   zipPar<E1, A1>(that: IO<E1, A1>): IO<E | E1, [A, A1]> {
-    return this.fork().flatMap(selfFiber =>
-      that.flatMap(b => selfFiber.join().map(a => [a, b]))
-    )
+    return this.zipWithPar(that)((a, b) => [a, b])
   }
 
   zipRight<E1, A1>(that: IO<E1, A1>): IO<E | E1, A1> {
-    return this.zipWith(that)(t => t[1])
+    return this.zipWith(that)((_, b) => b)
+  }
+
+  zipRightPar<E1, A1>(that: IO<E1, A1>): IO<E | E1, A1> {
+    return this.zipWithPar(that)((_, b) => b)
   }
 
   zipLeft<E1, A1>(that: IO<E1, A1>): IO<E | E1, A> {
-    return this.zipWith(that)(t => t[0])
+    return this.zipWith(that)((a, _) => a)
+  }
+
+  zipLeftPar<E1, A1>(that: IO<E1, A1>): IO<E | E1, A> {
+    return this.zipWith(that)((a, _) => a)
   }
 
   zipWith<E1, A1>(
     that: IO<E1, A1>
-  ): <C>(_: (_: [A, A1]) => C) => IO<E | E1, C> {
-    return f => this.flatMap(a => that.map(b => f([a, b])))
+  ): <C>(_: (a: A, b: A1) => C) => IO<E | E1, C> {
+    return f => this.flatMap(a => that.map(b => f(a, b)))
+  }
+
+  zipWithPar<E1, A1>(
+    that: IO<E1, A1>
+  ): <C>(_: (a: A, b: A1) => C) => IO<E | E1, C> {
+    return f =>
+      this.fork().flatMap(selfFiber =>
+        that.flatMap(b => selfFiber.join().map(a => f(a, b)))
+      )
   }
 
   private unsafeRunFiber(): Fiber<E, A> {
