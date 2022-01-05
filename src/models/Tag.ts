@@ -6,4 +6,4 @@ export type IOTypeTag =
   | 'Async'
   | 'FlatMap'
   | 'Fork'
-export type CauseTypeTag = 'Die' | 'Fail' | 'Interrupt'
+export type CauseTypeTag = 'Die' | 'Fail' | 'Interrupt' | 'Then' | 'Both'

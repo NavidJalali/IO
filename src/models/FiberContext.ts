@@ -9,26 +9,16 @@ import {
   Failure
 } from '../IO'
 import { Cause, Die } from './Cause'
-import { Fiber, FiberResult } from './Fiber'
+import { Exit } from './Exit'
+import { Fiber } from './Fiber'
 import { Cons, List, Nil } from './List'
 import { Stack } from './Stack'
 
-type Callback<E, A> = (_: FiberResult<E, A>) => any
+type Callback<E, A> = (_: Exit<E, A>) => any
 
 type FiberState<E, A> =
-  | { success: A; state: 'success' }
-  | { failure: Cause<E>; state: 'failed' }
-  | { state: 'pending'; callbacks: List<Callback<E, A>> }
-
-const fiberSucceed = <A>(a: A): FiberResult<never, A> => ({
-  success: a,
-  isSuccess: true
-})
-
-const fiberFail = <E>(cause: Cause<E>): FiberResult<E, never> => ({
-  failure: cause,
-  isSuccess: false
-})
+  | { state: 'done'; result: Exit<E, A> }
+  | { state: 'running'; callbacks: List<Callback<E, A>> }
 
 type Erased = IO<any, any>
 
@@ -58,7 +48,7 @@ export class FiberContext<E, A> implements Fiber<E, A> {
     const continueLoop = (value: any) => {
       if (stack.isEmpty()) {
         loop = false
-        this.complete(fiberSucceed(value as A))
+        this.complete(Exit.succeed(value as A))
       } else {
         const cont = stack.pop()!
         currentIO = cont.continue(value)
@@ -100,7 +90,7 @@ export class FiberContext<E, A> implements Fiber<E, A> {
               const result = (currentIO as Succeed<any>).thunk()
               continueLoop(result)
             } catch (error) {
-              this.complete({ failure: new Die(error), isSuccess: false })
+              this.complete(Exit.failCause(new Die(error)))
               loop = false
             }
             break
@@ -117,7 +107,7 @@ export class FiberContext<E, A> implements Fiber<E, A> {
             const asFailure = currentIO as Failure<any>
             const errorHandler = findNextErrorHandler()
             if (errorHandler === null || errorHandler.errorHandler === null) {
-              this.complete(fiberFail(asFailure.cause() as Cause<E>))
+              this.complete(Exit.failCause(asFailure.cause() as Cause<E>))
               loop = false
             } else {
               currentIO = errorHandler.errorHandler(asFailure.cause())
@@ -136,7 +126,7 @@ export class FiberContext<E, A> implements Fiber<E, A> {
             const async = currentIO as Async<any>
             loop = false
             if (stack.isEmpty()) {
-              async.register(a => this.complete(fiberSucceed(a as A)))
+              async.register(a => this.complete(Exit.succeed(a as A)))
             } else {
               async.register(a => {
                 currentIO = new SucceedNow(a)
@@ -160,69 +150,44 @@ export class FiberContext<E, A> implements Fiber<E, A> {
       }
     }
 
-    this.executor = new Promise<FiberResult<E, A>>(resolve => {
+    this.executor = new Promise<Exit<E, A>>(resolve => {
       run()
       this.await(resolve)
     })
   }
 
   private fiberState: FiberState<E, A> = {
-    state: 'pending',
+    state: 'running',
     callbacks: new Nil()
   }
 
-  private complete(result: FiberResult<E, A>) {
+  private complete(result: Exit<E, A>) {
     switch (this.fiberState.state) {
-      case 'success': {
+      case 'done': {
         throw `Internal defect: Fiber cannot be completed multiple times. 
         Fiber state was ${JSON.stringify(
           this.fiberState
         )}. Attempted to complete with ${JSON.stringify(result)}`
       }
 
-      case 'failed': {
-        throw `Internal defect: Fiber cannot be completed multiple times. 
-        Fiber state was ${JSON.stringify(
-          this.fiberState
-        )}. Attempted to complete with ${JSON.stringify(result)}`
-      }
-
-      case 'pending': {
+      case 'running': {
         this.fiberState.callbacks.foreach(callback => callback(result))
-        if (result.isSuccess) {
-          this.fiberState = {
-            state: 'success',
-            success: result.success
-          }
-        } else {
-          this.fiberState = {
-            state: 'failed',
-            failure: result.failure
-          }
+        this.fiberState = {
+          state: 'done',
+          result
         }
       }
     }
   }
 
-  private await(callback: (_: FiberResult<E, A>) => any) {
+  private await(callback: (_: Exit<E, A>) => any) {
     switch (this.fiberState.state) {
-      case 'success': {
-        callback({
-          success: this.fiberState.success,
-          isSuccess: true
-        })
+      case 'done': {
+        callback(this.fiberState.result)
         break
       }
 
-      case 'failed': {
-        callback({
-          failure: this.fiberState.failure,
-          isSuccess: false
-        })
-        break
-      }
-
-      case 'pending': {
+      case 'running': {
         this.fiberState.callbacks = new Cons(
           callback,
           this.fiberState.callbacks
@@ -232,21 +197,15 @@ export class FiberContext<E, A> implements Fiber<E, A> {
     }
   }
 
-  executor: Promise<FiberResult<E, A>>
+  executor: Promise<Exit<E, A>>
 
   interrupt(): IO<never, A> {
     throw new Error('Method not implemented.')
   }
 
   join(): IO<E, A> {
-    return IO.async<FiberResult<E, A>>(callback =>
-      this.await(callback)
-    ).flatMap(fiberRes => {
-      if (fiberRes.isSuccess === true) {
-        return new SucceedNow(fiberRes.success)
-      } else {
-        return new Failure(() => fiberRes.failure)
-      }
-    })
+    return IO.async<Exit<E, A>>(callback => this.await(callback)).flatMap(
+      IO.fromExit
+    )
   }
 }

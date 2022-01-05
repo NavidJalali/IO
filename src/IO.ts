@@ -1,4 +1,5 @@
-import { Cause, Die, Fail } from './models/Cause'
+import { Both, Cause, Die, Fail, Then } from './models/Cause'
+import { Exit } from './models/Exit'
 import { Fiber } from './models/Fiber'
 import { FiberContext } from './models/FiberContext'
 import { IOTypeTag } from './models/Tag'
@@ -28,6 +29,13 @@ abstract class IO<E, A> {
 
   static failCause<E1>(error: () => Cause<E1>): IO<E1, never> {
     return new Failure(error)
+  }
+
+  static fromExit<E1, A1>(exit: Exit<E1, A1>): IO<E1, A1> {
+    return exit.fold<IO<E1, A1>>(
+      _ => new Failure(() => _.cause),
+      _ => new SucceedNow(_.value)
+    )
   }
 
   // Error channel is messed up
@@ -117,7 +125,33 @@ abstract class IO<E, A> {
         cause.fold(
           e => failure(e.error),
           die => IO.failCause(() => die),
-          interrupt => IO.failCause(() => interrupt)
+          interrupt => IO.failCause(() => interrupt),
+          then =>
+            IO.failCause(() => then.left)
+              .foldIO(failure, success)
+              .foldIOCause(
+                left =>
+                  IO.failCause(() => then.right)
+                    .foldIO(failure, success)
+                    .foldIOCause(
+                      right => IO.failCause(() => new Then(left, right)),
+                      IO.succeedNow
+                    ),
+                IO.succeedNow
+              ),
+          both =>
+            IO.failCause(() => both.left)
+              .foldIO(failure, success)
+              .foldIOCause(
+                left =>
+                  IO.failCause(() => both.right)
+                    .foldIO(failure, success)
+                    .foldIOCause(
+                      right => IO.failCause(() => new Both(left, right)),
+                      IO.succeedNow
+                    ),
+                IO.succeedNow
+              )
         ),
       success
     )
@@ -223,19 +257,26 @@ abstract class IO<E, A> {
     return new FiberContext(this)
   }
 
-  unsafeRun(): Promise<A> {
+  unsafeRun(): Promise<Exit<E, A>> {
     const fiber = this.unsafeRunFiber()
-    return fiber.executor.then(result => {
-      if (result.isSuccess) {
-        return Promise.resolve(result.success)
-      } else {
-        return result.failure.fold(
-          fail => Promise.reject(fail),
-          reason => Promise.reject(`FATAL ERROR: FIBER DIED: ${reason}}`),
-          () => Promise.reject('Fiber interrupted.')
-        )
-      }
-    })
+    return fiber.executor
+  }
+
+  unsafeRunToPromise(): Promise<A> {
+    return this.unsafeRun().then(exit =>
+      exit.fold(
+        failure =>
+          failure.cause.fold(
+            fail => Promise.reject(fail),
+            reason => Promise.reject(`FATAL ERROR: FIBER DIED: ${reason}}`),
+            () => Promise.reject('Fiber interrupted.'),
+            then =>
+              Promise.reject(`Sequential failures: ${JSON.stringify(then)}`),
+            both => Promise.reject(`Parallel failures: ${JSON.stringify(both)}`)
+          ),
+        success => Promise.resolve(success.value)
+      )
+    )
   }
 }
 
