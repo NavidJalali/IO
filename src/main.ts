@@ -1,17 +1,6 @@
 import { IO } from './IO'
 
-IO.fromPromise(() => Promise.resolve(1))
-  .zipRight(
-    IO.succeed(() => {
-      throw 'Dick'
-    })
-  )
-  .foldIOCause(
-    _ => {
-      console.log('here')
-      return IO.fail(() => 1)
-    },
-    i => IO.succeed(() => i)
-  )
+IO.fromPromise(() => Promise.reject(1))
+  .mapError(_ => _ as number)
   .unsafeRun()
   .then(console.log)

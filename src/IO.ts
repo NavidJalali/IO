@@ -25,14 +25,6 @@ abstract class IO<E, A> {
     return new Failure(() => new Die(reason))
   }
 
-  static succeed<B>(value: () => B): IO<never, B> {
-    return new Succeed(value)
-  }
-
-  static sleep(ms: number): IO<never, void> {
-    return IO.async(callback => setTimeout(() => callback(), ms))
-  }
-
   static unit(): IO<never, void> {
     return new Succeed(() => {})
   }
@@ -45,10 +37,37 @@ abstract class IO<E, A> {
     return new Failure(error)
   }
 
+  static fromCallbacks<E1, A1>(
+    executor: (resolve: (_: A1) => any, reject: (_: E1) => any) => any
+  ): IO<E1, A1> {
+    return IO.succeedNow(executor)
+      .flatMap(exec =>
+        IO.async<Exit<E1, A1>>(complete =>
+          exec(
+            a => complete(Exit.succeed(a)),
+            e => complete(Exit.fail(e))
+          )
+        )
+      )
+      .flatMap(IO.fromExit)
+  }
+
   static fromExit<E1, A1>(exit: Exit<E1, A1>): IO<E1, A1> {
     return exit.fold<IO<E1, A1>>(
       _ => new Failure(() => _.cause),
       _ => new SucceedNow(_.value)
+    )
+  }
+
+  static fromNull<B>(b: () => B | null): IO<null, B> {
+    return IO.succeed(b).flatMap(_ =>
+      _ === null ? IO.fail(() => null) : IO.succeedNow(_)
+    )
+  }
+
+  static fromUndefined<B>(b: () => B | undefined): IO<undefined, B> {
+    return IO.succeed(b).flatMap(_ =>
+      _ === undefined ? IO.fail(() => undefined) : IO.succeedNow(_)
     )
   }
 
@@ -66,6 +85,14 @@ abstract class IO<E, A> {
 
   static scheduleOnce<E1, A1>(effect: IO<E1, A1>): (ms: number) => IO<E1, A1> {
     return ms => IO.sleep(ms).flatMap(() => effect)
+  }
+
+  static succeed<B>(value: () => B): IO<never, B> {
+    return new Succeed(value)
+  }
+
+  static sleep(ms: number): IO<never, void> {
+    return IO.async(callback => setTimeout(() => callback(), ms))
   }
 
   private static succeedNow<B>(value: B): IO<never, B> {
