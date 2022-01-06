@@ -17,6 +17,10 @@ export class Stack<A> {
     }
   }
 
+  underlying() {
+    return this.list
+  }
+
   peek(): A | null {
     return this.list.headOption()
   }

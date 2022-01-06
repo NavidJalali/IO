@@ -14,7 +14,7 @@ import { Exit } from './Exit'
 import { Fiber } from './Fiber'
 import { Cons, List, Nil } from './List'
 import { Stack } from './Stack'
-import { TagName, Tags } from './Tag'
+import { Tags } from './Tag'
 
 type Callback<E, A> = (_: Exit<E, A>) => any
 
@@ -40,10 +40,9 @@ class Continuation {
 }
 
 export class FiberContext<E, A> implements Fiber<E, A> {
-  constructor(io: IO<E, A>) {
-
-    console.log(this.fiberId, io);
+  constructor(io: IO<E, A>) { 
     
+    console.log("starting fiber", this.fiberId, io)
 
     const erased = <M, N>(typed: IO<M, N>): Erased => typed
 
@@ -86,13 +85,11 @@ export class FiberContext<E, A> implements Fiber<E, A> {
     const run = () => {
       while (loop) {       
         
-        console.log(TagName[currentIO.tag])
+        //console.log(TagName[currentIO.tag], this.fiberId)
         
         if (this.shouldInterrupt()) {
 
-          console.log("INTERRUPTING");
-          
-
+          console.log("INTERRUPTING", this.fiberId);
           this.isInterrupting = true
 
           if (currentIO.tag === Tags.fold) {
@@ -150,8 +147,11 @@ export class FiberContext<E, A> implements Fiber<E, A> {
               case Tags.async: {
                 const async = currentIO as Async<any>
                 loop = false
-                if (stack.isEmpty()) {
-                  async.register(a => this.complete(Exit.succeed(a as A)))
+                if (stack.isEmpty()) {                  
+                  async.register(a => {
+                    if (!this.shouldInterrupt())
+                      this.complete(Exit.succeed(a as A))
+                  })
                 } else {
                   async.register(a => {
                     currentIO = new SucceedNow(a)
@@ -185,10 +185,15 @@ export class FiberContext<E, A> implements Fiber<E, A> {
       }
     }
 
-    this.executor = new Promise<Exit<E, A>>(resolve => {
-      run()
-      this.await(resolve)
+    this.executor = new Promise<void>(resolve => {
+      resolve()
     })
+      .then(_ => {
+        run()
+        return new Promise(resolve => this.await(resolve))
+      })
+
+    console.log(this.fiberId, "constructed")
   }
 
   private fiberId = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
@@ -207,7 +212,7 @@ export class FiberContext<E, A> implements Fiber<E, A> {
   }
 
   private complete(result: Exit<E, A>) {
-    console.log("COMPLETE", this.fiberId)
+    console.log("COMPLETE", this.fiberId, result)
     switch (this.fiberState.state) {
       case 'done': {
         throw `Internal defect: Fiber cannot be completed multiple times. 
@@ -246,9 +251,7 @@ export class FiberContext<E, A> implements Fiber<E, A> {
   executor: Promise<Exit<E, A>>
 
   interrupt(): IO<never, void> {
-    return IO.succeed(() => {
-      console.log("interrupting", this.fiberId);
-      
+    return IO.succeed(() => {      
       this.interrupted = true
     })
   }
