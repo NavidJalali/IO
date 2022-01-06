@@ -8,6 +8,6 @@ import { IO } from './IO'
 //     return f.interrupt()
 //   })
 
-const t = IO.succeed(() => 1000000*9999999).repeat(999999999).fork().flatMap(_ => _.interrupt())
+const t = IO.succeed(() => 1000000*9999999).repeat(9999).fork().flatMap(_ => _.interrupt())
 
 t.unsafeRun()
