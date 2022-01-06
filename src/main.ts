@@ -8,9 +8,13 @@ import { IO } from './IO'
 //     return f.interrupt()
 //   })
 
-const t = IO.sleep(10000).fork().flatMap(_ => {
-  console.log(_)
-  return IO.sleep(2000).tap(_ => console.log("interrupting now!")).flatMap(__ => _.interrupt())
-})
+const t = IO.sleep(10000)
+  .fork()
+  .flatMap(_ => {
+    console.log(_)
+    return IO.sleep(2000)
+      .tap(_ => console.log('interrupting now!'))
+      .flatMap(__ => _.interrupt())
+  })
 
 t.unsafeRun()

@@ -40,10 +40,7 @@ class Continuation {
 }
 
 export class FiberContext<E, A> implements Fiber<E, A> {
-  constructor(io: IO<E, A>) { 
-    
-    console.log("starting fiber", this.fiberId, io)
-
+  constructor(io: IO<E, A>) {
     const erased = <M, N>(typed: IO<M, N>): Erased => typed
 
     const stack = new Stack<Continuation>()
@@ -83,13 +80,8 @@ export class FiberContext<E, A> implements Fiber<E, A> {
     }
 
     const run = () => {
-      while (loop) {       
-        
-        //console.log(TagName[currentIO.tag], this.fiberId)
-        
+      while (loop) {
         if (this.shouldInterrupt()) {
-
-          console.log("INTERRUPTING", this.fiberId);
           this.isInterrupting = true
 
           if (currentIO.tag === Tags.fold) {
@@ -147,7 +139,7 @@ export class FiberContext<E, A> implements Fiber<E, A> {
               case Tags.async: {
                 const async = currentIO as Async<any>
                 loop = false
-                if (stack.isEmpty()) {                  
+                if (stack.isEmpty()) {
                   async.register(a => {
                     if (!this.shouldInterrupt())
                       this.complete(Exit.succeed(a as A))
@@ -187,13 +179,10 @@ export class FiberContext<E, A> implements Fiber<E, A> {
 
     this.executor = new Promise<void>(resolve => {
       resolve()
+    }).then(_ => {
+      run()
+      return new Promise(resolve => this.await(resolve))
     })
-      .then(_ => {
-        run()
-        return new Promise(resolve => this.await(resolve))
-      })
-
-    console.log(this.fiberId, "constructed")
   }
 
   private fiberId = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
@@ -212,7 +201,6 @@ export class FiberContext<E, A> implements Fiber<E, A> {
   }
 
   private complete(result: Exit<E, A>) {
-    console.log("COMPLETE", this.fiberId, result)
     switch (this.fiberState.state) {
       case 'done': {
         throw `Internal defect: Fiber cannot be completed multiple times. 
@@ -251,7 +239,7 @@ export class FiberContext<E, A> implements Fiber<E, A> {
   executor: Promise<Exit<E, A>>
 
   interrupt(): IO<never, void> {
-    return IO.succeed(() => {      
+    return IO.succeed(() => {
       this.interrupted = true
     })
   }

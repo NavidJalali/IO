@@ -399,7 +399,7 @@ abstract class IO<E, A> {
   zipLeft<E1, A1>(that: IO<E1, A1>): IO<E | E1, A> {
     return this.zipWith(that)((a, _) => a)
   }
-  
+
   zipLeftLazy<E1, A1>(that: () => IO<E1, A1>): IO<E | E1, A> {
     return this.zipWithLazy(that)((a, _) => a)
   }
