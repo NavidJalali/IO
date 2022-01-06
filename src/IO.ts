@@ -209,7 +209,7 @@ abstract class IO<E, A> {
   }
 
   forever(): IO<E, never> {
-    return this.zipRight(this.forever())
+    return new FlatMap(this, _ => this.forever())
   }
 
   fork(): IO<never, Fiber<E, A>> {
@@ -368,24 +368,48 @@ abstract class IO<E, A> {
     return this.flatMap(a => that.flatMap(b => IO.succeedNow([a, b])))
   }
 
+  zipLazy<E1, A1>(that: () => IO<E1, A1>): IO<E | E1, [A, A1]> {
+    return this.flatMap(a => that().flatMap(b => IO.succeedNow([a, b])))
+  }
+
   zipPar<E1, A1>(that: IO<E1, A1>): IO<E | E1, [A, A1]> {
     return this.zipWithPar(that)((a, b) => [a, b])
+  }
+
+  zipParLazy<E1, A1>(that: () => IO<E1, A1>): IO<E | E1, [A, A1]> {
+    return this.zipWithParLazy(that)((a, b) => [a, b])
   }
 
   zipRight<E1, A1>(that: IO<E1, A1>): IO<E | E1, A1> {
     return this.zipWith(that)((_, b) => b)
   }
 
+  zipRightLazy<E1, A1>(that: () => IO<E1, A1>): IO<E | E1, A1> {
+    return this.zipWithLazy(that)((_, b) => b)
+  }
+
   zipRightPar<E1, A1>(that: IO<E1, A1>): IO<E | E1, A1> {
     return this.zipWithPar(that)((_, b) => b)
+  }
+
+  zipRightParLazy<E1, A1>(that: () => IO<E1, A1>): IO<E | E1, A1> {
+    return this.zipWithParLazy(that)((_, b) => b)
   }
 
   zipLeft<E1, A1>(that: IO<E1, A1>): IO<E | E1, A> {
     return this.zipWith(that)((a, _) => a)
   }
+  
+  zipLeftLazy<E1, A1>(that: () => IO<E1, A1>): IO<E | E1, A> {
+    return this.zipWithLazy(that)((a, _) => a)
+  }
 
   zipLeftPar<E1, A1>(that: IO<E1, A1>): IO<E | E1, A> {
     return this.zipWith(that)((a, _) => a)
+  }
+
+  zipLeftParLazy<E1, A1>(that: () => IO<E1, A1>): IO<E | E1, A> {
+    return this.zipWithParLazy(that)((a, _) => a)
   }
 
   zipWith<E1, A1>(
@@ -394,12 +418,27 @@ abstract class IO<E, A> {
     return f => this.flatMap(a => that.map(b => f(a, b)))
   }
 
+  zipWithLazy<E1, A1>(
+    that: () => IO<E1, A1>
+  ): <C>(_: (a: A, b: A1) => C) => IO<E | E1, C> {
+    return f => this.flatMap(a => that().map(b => f(a, b)))
+  }
+
   zipWithPar<E1, A1>(
     that: IO<E1, A1>
   ): <C>(_: (a: A, b: A1) => C) => IO<E | E1, C> {
     return f =>
       this.fork().flatMap(selfFiber =>
         that.flatMap(b => selfFiber.join().map(a => f(a, b)))
+      )
+  }
+
+  zipWithParLazy<E1, A1>(
+    that: () => IO<E1, A1>
+  ): <C>(_: (a: A, b: A1) => C) => IO<E | E1, C> {
+    return f =>
+      this.fork().flatMap(selfFiber =>
+        that().flatMap(b => selfFiber.join().map(a => f(a, b)))
       )
   }
 

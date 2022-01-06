@@ -1,4 +1,4 @@
-export const Tags: { [k in name]: Tag } = {
+export const Tags: { [k in Name]: Tag } = {
   succeedNow: 0,
   succeed: 1,
   fold: 2,
@@ -9,7 +9,18 @@ export const Tags: { [k in name]: Tag } = {
   setInterruptStatus: 7
 }
 
-export type name =
+export const TagName: { [t in Tag]: Name } = {
+  0: 'succeedNow',
+  1: 'succeed',
+  2: 'fold',
+  3: 'failure',
+  4: 'async',
+  5: 'flatMap',
+  6: 'fork',
+  7: 'setInterruptStatus'
+}
+
+export type Name =
   | 'succeedNow'
   | 'succeed'
   | 'fold'

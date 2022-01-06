@@ -9,6 +9,26 @@ export abstract class Cause<E> {
 
   abstract map<A>(f: (_: E) => A): Cause<A>
 
+  static fail<A>(e: A): Cause<A> {
+    return new Fail(e)
+  }
+
+  static die(e: unknown): Cause<never> {
+    return new Die(e)
+  }
+
+  static interrupt(): Cause<never> {
+    return new Interrupt()
+  }
+
+  static then<A>(left: Cause<A>, right: Cause<A>): Cause<A> {
+    return new Then(left, right)
+  }
+
+  static both<A>(left: Cause<A>, right: Cause<A>): Cause<A> {
+    return new Both(left, right)
+  }
+
   then(that: Cause<E>): Cause<E> {
     return new Then(this, that)
   }

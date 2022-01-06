@@ -14,7 +14,7 @@ import { Exit } from './Exit'
 import { Fiber } from './Fiber'
 import { Cons, List, Nil } from './List'
 import { Stack } from './Stack'
-import { Tags } from './Tag'
+import { TagName, Tags } from './Tag'
 
 type Callback<E, A> = (_: Exit<E, A>) => any
 
@@ -41,6 +41,10 @@ class Continuation {
 
 export class FiberContext<E, A> implements Fiber<E, A> {
   constructor(io: IO<E, A>) {
+
+    console.log(this.fiberId, io);
+    
+
     const erased = <M, N>(typed: IO<M, N>): Erased => typed
 
     const stack = new Stack<Continuation>()
@@ -80,8 +84,15 @@ export class FiberContext<E, A> implements Fiber<E, A> {
     }
 
     const run = () => {
-      while (loop) {
+      while (loop) {       
+        
+        console.log(TagName[currentIO.tag])
+        
         if (this.shouldInterrupt()) {
+
+          console.log("INTERRUPTING");
+          
+
           this.isInterrupting = true
 
           if (currentIO.tag === Tags.fold) {
@@ -91,6 +102,7 @@ export class FiberContext<E, A> implements Fiber<E, A> {
           } else {
             stack.push(new Continuation(_ => currentIO))
           }
+
           currentIO = IO.failCausePure(new Interrupt())
         } else {
           try {
@@ -179,9 +191,11 @@ export class FiberContext<E, A> implements Fiber<E, A> {
     })
   }
 
+  private fiberId = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
+
   private interrupted = false
   private isInterrupting = false
-  private isInterruptible = false
+  private isInterruptible = true
 
   private shouldInterrupt() {
     return this.interrupted && !this.isInterrupting && this.isInterruptible
@@ -193,6 +207,7 @@ export class FiberContext<E, A> implements Fiber<E, A> {
   }
 
   private complete(result: Exit<E, A>) {
+    console.log("COMPLETE", this.fiberId)
     switch (this.fiberState.state) {
       case 'done': {
         throw `Internal defect: Fiber cannot be completed multiple times. 
@@ -232,6 +247,8 @@ export class FiberContext<E, A> implements Fiber<E, A> {
 
   interrupt(): IO<never, void> {
     return IO.succeed(() => {
+      console.log("interrupting", this.fiberId);
+      
       this.interrupted = true
     })
   }
