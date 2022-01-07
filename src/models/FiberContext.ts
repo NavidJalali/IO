@@ -41,6 +41,9 @@ class Continuation {
 
 export class FiberContext<E, A> implements Fiber<E, A> {
   constructor(io: IO<E, A>) {
+
+    //console.log("start", this.fiberId, io.toString())
+
     const erased = <M, N>(typed: IO<M, N>): Erased => typed
 
     const stack = new Stack<Continuation>()
@@ -139,13 +142,15 @@ export class FiberContext<E, A> implements Fiber<E, A> {
               case Tags.async: {
                 const async = currentIO as Async<any>
                 loop = false
-                if (stack.isEmpty()) {
-                  async.register(a => {
+                if (stack.isEmpty()) {                  
+                  (async as Async<A>).register(a => {
                     if (!this.shouldInterrupt())
-                      this.complete(Exit.succeed(a as A))
+                      this.complete(Exit.succeed(a))
+                    else
+                      this.complete(Exit.failCause(Cause.interrupt()))
                   })
                 } else {
-                  async.register(a => {
+                  async.register((a: any) => {                    
                     currentIO = new SucceedNow(a)
                     resume()
                   })
@@ -158,7 +163,9 @@ export class FiberContext<E, A> implements Fiber<E, A> {
                 const oldInterruptible = this.isInterruptible
                 this.isInterruptible = setInterrupt.status.isInterruptible
                 currentIO = setInterrupt.effect.ensuring(
-                  IO.succeed(() => (this.isInterruptible = oldInterruptible))
+                  IO.succeed(() => {
+                    this.isInterruptible = oldInterruptible
+                  })
                 )
                 break
               }
@@ -185,7 +192,7 @@ export class FiberContext<E, A> implements Fiber<E, A> {
     })
   }
 
-  private fiberId = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
+  fiberId = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
 
   private interrupted = false
   private isInterrupting = false
@@ -201,6 +208,7 @@ export class FiberContext<E, A> implements Fiber<E, A> {
   }
 
   private complete(result: Exit<E, A>) {
+    //console.log("end", this.fiberId, result)
     switch (this.fiberState.state) {
       case 'done': {
         throw `Internal defect: Fiber cannot be completed multiple times. 

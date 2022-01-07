@@ -109,7 +109,14 @@ abstract class IO<E, A> {
   }
 
   static sleep(ms: number): IO<never, void> {
-    return IO.async(callback => setTimeout(() => callback(), ms))
+    return IO.async(callback => {
+      console.log("FOOOO");
+      
+      setTimeout(() => {
+        console.log("bar");
+        callback()
+      }, ms)
+    })
   }
 
   private static succeedNow<B>(value: B): IO<never, B> {
@@ -209,7 +216,7 @@ abstract class IO<E, A> {
   }
 
   forever(): IO<E, never> {
-    return new FlatMap(this, _ => this.forever())
+    return this.fork().flatMap(_ => _.join()).flatMap(_ => this.forever())
   }
 
   fork(): IO<never, Fiber<E, A>> {
@@ -442,6 +449,8 @@ abstract class IO<E, A> {
       )
   }
 
+  abstract toString(): string
+
   private unsafeRunFiber(): Fiber<E, A> {
     return new FiberContext(this)
   }
@@ -486,6 +495,10 @@ export class Fold<E, A, P, Q> extends IO<P, Q> {
   io: IO<E, A>
   onSuccess: (_: A) => IO<P, Q>
   onFailure: (_: Cause<E>) => IO<P, Q>
+
+  toString(): string {
+    return `Fold(${this.io.toString()}, Fn, Fn)`
+  }
 }
 
 export class Async<A> extends IO<never, A> {
@@ -497,6 +510,10 @@ export class Async<A> extends IO<never, A> {
   register: (_: (_: A) => any) => any
 
   tag: Tag = Tags.async
+
+  toString(): string {
+    return `Async(Fn)`
+  }
 }
 
 export class Fork<E, A> extends IO<never, Fiber<E, A>> {
@@ -508,6 +525,10 @@ export class Fork<E, A> extends IO<never, Fiber<E, A>> {
   effect: IO<E, A>
 
   tag: Tag = Tags.fork
+
+  toString(): string {
+    return `Fork(${this.effect.toString()})`
+  }
 }
 
 export class SetInterruptStatus<E, A> extends IO<E, A> {
@@ -521,6 +542,10 @@ export class SetInterruptStatus<E, A> extends IO<E, A> {
   effect: IO<E, A>
 
   tag: Tag = Tags.setInterruptStatus
+
+  toString(): string {
+    return `SetInterrupt(${this.effect.toString()}, ${this.status.isInterruptible})`
+  }
 }
 
 export class Failure<E> extends IO<E, never> {
@@ -532,6 +557,10 @@ export class Failure<E> extends IO<E, never> {
   cause: () => Cause<E>
 
   tag: Tag = Tags.failure
+
+  toString(): string {
+    return `Failure(Fn)`
+  }
 }
 
 export class SucceedNow<A> extends IO<never, A> {
@@ -543,6 +572,10 @@ export class SucceedNow<A> extends IO<never, A> {
   value: A
 
   tag: Tag = Tags.succeedNow
+
+  toString(): string {
+    return `SucceedNow(${this.value})`
+  }
 }
 
 export class Succeed<A> extends IO<never, A> {
@@ -554,6 +587,10 @@ export class Succeed<A> extends IO<never, A> {
   thunk: () => A
 
   tag: Tag = Tags.succeed
+
+  toString(): string {
+    return `Succeed(${this.thunk})`
+  }
 }
 
 export class FlatMap<E0, E1, A0, A1> extends IO<E0 | E1, A1> {
@@ -567,6 +604,10 @@ export class FlatMap<E0, E1, A0, A1> extends IO<E0 | E1, A1> {
   continuation: (_: A0) => IO<E1, A1>
 
   tag: Tag = Tags.flatMap
+
+  toString(): string {
+    return `FlatMap(${this.effect.toString()}, Fn)`
+  }
 }
 
 export { IO, Exit, Fiber }
