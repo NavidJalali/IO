@@ -109,11 +109,8 @@ abstract class IO<E, A> {
   }
 
   static sleep(ms: number): IO<never, void> {
-    return IO.async(callback => {
-      console.log("FOOOO");
-      
+    return IO.async(callback => {      
       setTimeout(() => {
-        console.log("bar");
         callback()
       }, ms)
     })
@@ -216,7 +213,7 @@ abstract class IO<E, A> {
   }
 
   forever(): IO<E, never> {
-    return this.fork().flatMap(_ => _.join()).flatMap(_ => this.forever())
+    return this.flatMap (_ => this.forever())
   }
 
   fork(): IO<never, Fiber<E, A>> {

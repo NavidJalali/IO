@@ -42,7 +42,7 @@ class Continuation {
 export class FiberContext<E, A> implements Fiber<E, A> {
   constructor(io: IO<E, A>) {
 
-    //console.log("start", this.fiberId, io.toString())
+    console.log("start", this.fiberId, io.toString())
 
     const erased = <M, N>(typed: IO<M, N>): Erased => typed
 
@@ -82,8 +82,8 @@ export class FiberContext<E, A> implements Fiber<E, A> {
       run()
     }
 
-    const run = () => {
-      while (loop) {
+    const run = async () => {
+      while (loop) {   
         if (this.shouldInterrupt()) {
           this.isInterrupting = true
 
@@ -186,10 +186,11 @@ export class FiberContext<E, A> implements Fiber<E, A> {
 
     this.executor = new Promise<void>(resolve => {
       resolve()
-    }).then(_ => {
-      run()
-      return new Promise(resolve => this.await(resolve))
     })
+    .then(_ => run())
+    .then(_ => new Promise(resolve => this.await(resolve)))
+
+    console.log("constructed", this.fiberId)
   }
 
   fiberId = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
@@ -208,7 +209,7 @@ export class FiberContext<E, A> implements Fiber<E, A> {
   }
 
   private complete(result: Exit<E, A>) {
-    //console.log("end", this.fiberId, result)
+    console.log("end", this.fiberId, result)
     switch (this.fiberState.state) {
       case 'done': {
         throw `Internal defect: Fiber cannot be completed multiple times. 
