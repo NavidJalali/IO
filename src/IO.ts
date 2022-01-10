@@ -214,7 +214,6 @@ abstract class IO<E, A> {
 
   forever(): IO<E, never> {
     return this.flatMap(_ => this.forever())
-    //return this.flatMap(_ => IO.sleep(0).zipRight(this.forever()))
   }
 
   fork(): IO<never, Fiber<E, A>> {
