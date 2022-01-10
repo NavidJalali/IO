@@ -109,7 +109,7 @@ abstract class IO<E, A> {
   }
 
   static sleep(ms: number): IO<never, void> {
-    return IO.async(callback => {      
+    return IO.async(callback => {
       setTimeout(() => {
         callback()
       }, ms)
@@ -542,7 +542,9 @@ export class SetInterruptStatus<E, A> extends IO<E, A> {
   tag: Tag = Tags.setInterruptStatus
 
   toString(): string {
-    return `SetInterrupt(${this.effect.toString()}, ${this.status.isInterruptible})`
+    return `SetInterrupt(${this.effect.toString()}, ${
+      this.status.isInterruptible
+    })`
   }
 }
 

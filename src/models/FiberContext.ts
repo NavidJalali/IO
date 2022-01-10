@@ -41,8 +41,7 @@ class Continuation {
 
 export class FiberContext<E, A> implements Fiber<E, A> {
   constructor(io: IO<E, A>) {
-
-    console.log("start", this.fiberId, io.toString())
+    console.log('start', this.fiberId, io.toString())
 
     const erased = <M, N>(typed: IO<M, N>): Erased => typed
 
@@ -88,114 +87,109 @@ export class FiberContext<E, A> implements Fiber<E, A> {
       }
     }
 
-    const run = () => { 
-        if (this.shouldInterrupt()) {
-          this.isInterrupting = true
+    const run = () => {
+      if (this.shouldInterrupt()) {
+        this.isInterrupting = true
 
-          if (currentIO.tag === Tags.fold) {
-            stack.push(
-              Continuation.fromFold(currentIO as Fold<any, any, any, any>)
-            )
-          } else {
-            stack.push(new Continuation(_ => currentIO))
-          }
-
-          currentIO = IO.failCausePure(new Interrupt())
+        if (currentIO.tag === Tags.fold) {
+          stack.push(
+            Continuation.fromFold(currentIO as Fold<any, any, any, any>)
+          )
         } else {
-          try {
-            switch (currentIO.tag) {
-              case Tags.succeedNow: {
-                continueLoop((currentIO as SucceedNow<any>).value)
-                break
-              }
-
-              case Tags.succeed: {
-                const result = (currentIO as Succeed<any>).thunk()
-                continueLoop(result)
-                break
-              }
-
-              case Tags.flatMap: {
-                const asFlatMap = currentIO as FlatMap<any, any, any, any>
-                stack.push(new Continuation(asFlatMap.continuation))
-                currentIO = asFlatMap.effect
-                break
-              }
-
-              case Tags.failure: {
-                const cause = (currentIO as Failure<any>).cause()
-                const errorHandler = findNextErrorHandler()
-                if (
-                  errorHandler === null ||
-                  errorHandler.errorHandler === null
-                ) {
-                  this.complete(Exit.failCause(cause as Cause<E>))
-                  loop = false
-                } else {
-                  currentIO = errorHandler.errorHandler(cause)
-                }
-                break
-              }
-
-              case Tags.fold: {
-                const asFold = currentIO as Fold<any, any, any, any>
-                currentIO = asFold.io
-                stack.push(Continuation.fromFold(asFold))
-                break
-              }
-
-              case Tags.async: {
-                const async = currentIO as Async<any>
-                loop = false
-                if (stack.isEmpty()) {                  
-                  (async as Async<A>).register(a => {
-                    if (!this.shouldInterrupt())
-                      this.complete(Exit.succeed(a))
-                    else
-                      this.complete(Exit.failCause(Cause.interrupt()))
-                  })
-                } else {
-                  async.register((a: any) => {                    
-                    currentIO = new SucceedNow(a)
-                    resume()
-                  })
-                }
-                break
-              }
-
-              case Tags.setInterruptStatus: {
-                const setInterrupt = currentIO as SetInterruptStatus<any, any>
-                const oldInterruptible = this.isInterruptible
-                this.isInterruptible = setInterrupt.status.isInterruptible
-                currentIO = setInterrupt.effect.ensuring(
-                  IO.succeed(() => {
-                    this.isInterruptible = oldInterruptible
-                  })
-                )
-                break
-              }
-
-              case Tags.fork: {
-                const fork = currentIO as Fork<any, any>
-                const fiber = new FiberContext(fork.effect)
-                continueLoop(fiber)
-                break
-              }
-            }
-          } catch (error) {
-            currentIO = IO.die(error)
-          }
+          stack.push(new Continuation(_ => currentIO))
         }
-        suspend()
+
+        currentIO = IO.failCausePure(new Interrupt())
+      } else {
+        try {
+          switch (currentIO.tag) {
+            case Tags.succeedNow: {
+              continueLoop((currentIO as SucceedNow<any>).value)
+              break
+            }
+
+            case Tags.succeed: {
+              const result = (currentIO as Succeed<any>).thunk()
+              continueLoop(result)
+              break
+            }
+
+            case Tags.flatMap: {
+              const asFlatMap = currentIO as FlatMap<any, any, any, any>
+              stack.push(new Continuation(asFlatMap.continuation))
+              currentIO = asFlatMap.effect
+              break
+            }
+
+            case Tags.failure: {
+              const cause = (currentIO as Failure<any>).cause()
+              const errorHandler = findNextErrorHandler()
+              if (errorHandler === null || errorHandler.errorHandler === null) {
+                this.complete(Exit.failCause(cause as Cause<E>))
+                loop = false
+              } else {
+                currentIO = errorHandler.errorHandler(cause)
+              }
+              break
+            }
+
+            case Tags.fold: {
+              const asFold = currentIO as Fold<any, any, any, any>
+              currentIO = asFold.io
+              stack.push(Continuation.fromFold(asFold))
+              break
+            }
+
+            case Tags.async: {
+              const async = currentIO as Async<any>
+              loop = false
+              if (stack.isEmpty()) {
+                ;(async as Async<A>).register(a => {
+                  if (!this.shouldInterrupt()) this.complete(Exit.succeed(a))
+                  else this.complete(Exit.failCause(Cause.interrupt()))
+                })
+              } else {
+                async.register((a: any) => {
+                  currentIO = new SucceedNow(a)
+                  resume()
+                })
+              }
+              break
+            }
+
+            case Tags.setInterruptStatus: {
+              const setInterrupt = currentIO as SetInterruptStatus<any, any>
+              const oldInterruptible = this.isInterruptible
+              this.isInterruptible = setInterrupt.status.isInterruptible
+              currentIO = setInterrupt.effect.ensuring(
+                IO.succeed(() => {
+                  this.isInterruptible = oldInterruptible
+                })
+              )
+              break
+            }
+
+            case Tags.fork: {
+              const fork = currentIO as Fork<any, any>
+              const fiber = new FiberContext(fork.effect)
+              continueLoop(fiber)
+              break
+            }
+          }
+        } catch (error) {
+          currentIO = IO.die(error)
+        }
+      }
+      suspend()
     }
 
     this.executor = new Promise<void>(resolve => {
       resolve()
     })
-    .then(_ => run())
-    .then(_ => new Promise(resolve => this.await(resolve)))
+      .then(_ => run())
+      .then(_ => new Promise(resolve => this.await(resolve)))
 
-    console.log("constructed", this.fiberId)
+    console.log('constructed', this.fiberId)
   }
 
   fiberId = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
@@ -214,7 +208,7 @@ export class FiberContext<E, A> implements Fiber<E, A> {
   }
 
   private complete(result: Exit<E, A>) {
-    console.log("end", this.fiberId, result)
+    console.log('end', this.fiberId, result)
     switch (this.fiberState.state) {
       case 'done': {
         throw `Internal defect: Fiber cannot be completed multiple times. 
