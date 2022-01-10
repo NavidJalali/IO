@@ -82,8 +82,13 @@ export class FiberContext<E, A> implements Fiber<E, A> {
       run()
     }
 
-    const run = async () => {
-      while (loop) {   
+    const suspend = () => {
+      if (loop) {
+        setTimeout(() => run(), 0)
+      }
+    }
+
+    const run = () => { 
         if (this.shouldInterrupt()) {
           this.isInterrupting = true
 
@@ -181,7 +186,7 @@ export class FiberContext<E, A> implements Fiber<E, A> {
             currentIO = IO.die(error)
           }
         }
-      }
+        suspend()
     }
 
     this.executor = new Promise<void>(resolve => {
