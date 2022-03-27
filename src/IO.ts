@@ -50,6 +50,22 @@ abstract class IO<E, A> {
     return new Failure(() => error)
   }
 
+  static poll<E1, A1>(
+    io: IO<E1, A1>,
+    shouldSucceed: (_: A1) => boolean,
+    pollInterval: number
+  ): IO<E1, A1> {
+    return io.flatMap(a => {
+      if (shouldSucceed(a)) {
+        return IO.succeedNow(a)
+      } else {
+        return IO.sleep(pollInterval).zipRight(
+          this.poll(io, shouldSucceed, pollInterval)
+        )
+      }
+    })
+  }
+
   static fromCallbacks<E1, A1>(
     executor: (resolve: (_: A1) => any, reject: (_: E1) => any) => any
   ): IO<E1, A1> {
@@ -275,6 +291,19 @@ abstract class IO<E, A> {
     return this.foldIO(e => IO.failCause(() => new Die(e)), IO.succeedNow)
   }
 
+  race<E1, A1>(that: IO<E1, A1>): IO<E | E1, A | A1> {
+    return this.fork().zip(that.fork()).flatMap(
+      tupled => IO.async<A | A1>(complete => {
+        {
+          const [f1, f2] = tupled
+          const self = f1.join().tap(a => f2.interrupt().tap(_ => complete(a)))
+          const other = f2.join().tapIO(a1 => f1.interrupt().tap(_ => complete(a1)))
+          self.zipPar(other).unsafeRunFiber()
+        }
+      })
+    )
+  }
+
   repeat(n: number): IO<E, void> {
     if (n <= 0) {
       return IO.unit()
@@ -287,8 +316,8 @@ abstract class IO<E, A> {
     return this.tapIO(a => IO.succeed(() => f(a)))
   }
 
-  tapIO<E1, A1>(f: (a: A) => IO<E1, A1>): IO<E, A> {
-    return this.flatMap(a => f(a).ignore().zipRightPar(IO.succeedNow(a)))
+  tapIO<E1, A1>(f: (a: A) => IO<E1, A1>): IO<E | E1, A> {
+    return this.flatMap(a => f(a).asPure(a))
   }
 
   tapBoth<A1, A2>(onSuccess: (_: A) => A1, onFailure: (_: E) => A2): IO<E, A> {
@@ -301,7 +330,7 @@ abstract class IO<E, A> {
   tapBothIO<E1, A1, E2, A2>(
     onSuccess: (_: A) => IO<E1, A1>,
     onFailure: (_: E) => IO<E2, A2>
-  ): IO<E, A> {
+  ): IO<E | E1 | E2, A> {
     const computeIfError = <B, C>(
       cause: Cause<B>,
       f: (_: B) => C,
@@ -344,7 +373,7 @@ abstract class IO<E, A> {
               (a, b) => a.zipPar(b).ignore()
             )
         )
-        .zipRightPar(IO.failCausePure(cause))
+        .zipRight(IO.failCausePure(cause))
     )
   }
 
@@ -361,10 +390,10 @@ abstract class IO<E, A> {
   tapBothCauseIO<E1, A1, E2, A2>(
     onSuccess: (_: A) => IO<E1, A1>,
     onFailure: (_: Cause<E>) => IO<E2, A2>
-  ): IO<E, A> {
-    return this.foldCauseIO(
-      cause => onFailure(cause).ignore().zipRightPar(IO.failCausePure(cause)),
-      success => onSuccess(success).ignore().zipRightPar(IO.succeedNow(success))
+  ): IO<E | E1 | E2, A> {
+    return this.foldCauseIO<E | E1 | E2, A>(
+      cause => onFailure(cause).zipRight(IO.failCausePure(cause)),
+      success => onSuccess(success).zipRight(IO.succeedNow(success))
     )
   }
 
@@ -494,7 +523,9 @@ export class Fold<E, A, P, Q> extends IO<P, Q> {
   onFailure: (_: Cause<E>) => IO<P, Q>
 
   toString(): string {
-    return `Fold(${this.io.toString()}, Fn, Fn)`
+    return `Fold(${this.io.toString()}, onSuccess = ${
+      this.onSuccess
+    }, onFailure = Fn)`
   }
 }
 
@@ -605,7 +636,7 @@ export class FlatMap<E0, E1, A0, A1> extends IO<E0 | E1, A1> {
   tag: Tag = Tags.flatMap
 
   toString(): string {
-    return `FlatMap(${this.effect.toString()}, Fn)`
+    return `FlatMap(${this.effect.toString()}, ${this.continuation})`
   }
 }
 
