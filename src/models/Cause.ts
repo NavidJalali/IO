@@ -44,10 +44,19 @@ export abstract class Cause<E> {
   abstract equals(that: any): boolean
 
   failureOption(): E | null {
-    return this.fold(_ => _, _ => null, () => null, (_, __) => null, (_, __) => null)
+    return this.fold(
+      _ => _,
+      _ => null,
+      () => null,
+      (_, __) => null,
+      (_, __) => null
+    )
   }
 
-  abstract foldFailureOrCause<A>(ifFailure: (_: E) => A, ifCause: (_: Cause<E>) => A): A
+  abstract foldFailureOrCause<A>(
+    ifFailure: (_: E) => A,
+    ifCause: (_: Cause<E>) => A
+  ): A
 }
 
 export class Die extends Cause<never> {
@@ -58,11 +67,20 @@ export class Die extends Cause<never> {
 
   reason: unknown
 
-  fold<A>(_: (_: never) => A, ifDie: (reason: unknown) => A, __: () => A, ___: (left: A, __: A) => A, ____: (_: A, __: A) => A): A {
+  fold<A>(
+    _: (_: never) => A,
+    ifDie: (reason: unknown) => A,
+    __: () => A,
+    ___: (left: A, __: A) => A,
+    ____: (_: A, __: A) => A
+  ): A {
     return ifDie(this.reason)
   }
 
-  foldFailureOrCause<A>(_: (_: never) => A, ifCause: (_: Cause<never>) => A): A {
+  foldFailureOrCause<A>(
+    _: (_: never) => A,
+    ifCause: (_: Cause<never>) => A
+  ): A {
     return ifCause(this)
   }
 
@@ -87,7 +105,13 @@ export class Fail<E> extends Cause<E> {
 
   error: E
 
-  fold<A>(ifFail: (error: E) => A, _: (reason: unknown) => A, __: () => A, ___: (left: A, right: A) => A, ____: (left: A, right: A) => A): A {
+  fold<A>(
+    ifFail: (error: E) => A,
+    _: (reason: unknown) => A,
+    __: () => A,
+    ___: (left: A, right: A) => A,
+    ____: (left: A, right: A) => A
+  ): A {
     return ifFail(this.error)
   }
 
@@ -115,11 +139,20 @@ export class Interrupt extends Cause<never> {
 
   error = null
 
-  fold<A>(_: (error: never) => A, __: (reason: unknown) => A, ifInterrupt: () => A, ___: (left: A, right: A) => A, ____: (left: A, right: A) => A): A {
+  fold<A>(
+    _: (error: never) => A,
+    __: (reason: unknown) => A,
+    ifInterrupt: () => A,
+    ___: (left: A, right: A) => A,
+    ____: (left: A, right: A) => A
+  ): A {
     return ifInterrupt()
   }
 
-  foldFailureOrCause<A>(_: (_: never) => A, ifCause: (_: Cause<never>) => A): A {
+  foldFailureOrCause<A>(
+    _: (_: never) => A,
+    ifCause: (_: Cause<never>) => A
+  ): A {
     return ifCause(this)
   }
 
@@ -146,8 +179,17 @@ export class Then<E> extends Cause<E> {
   left: Cause<E>
   right: Cause<E>
 
-  fold<A>(ifFail: (error: E) => A, ifDie: (reason: unknown) => A, ifInterrupt: () => A, ifThen: (left: A, right: A) => A, ifBoth: (left: A, right: A) => A): A {
-    return ifThen(this.left.fold(ifFail, ifDie, ifInterrupt, ifThen, ifBoth), this.right.fold(ifFail, ifDie, ifInterrupt, ifThen, ifBoth))
+  fold<A>(
+    ifFail: (error: E) => A,
+    ifDie: (reason: unknown) => A,
+    ifInterrupt: () => A,
+    ifThen: (left: A, right: A) => A,
+    ifBoth: (left: A, right: A) => A
+  ): A {
+    return ifThen(
+      this.left.fold(ifFail, ifDie, ifInterrupt, ifThen, ifBoth),
+      this.right.fold(ifFail, ifDie, ifInterrupt, ifThen, ifBoth)
+    )
   }
 
   foldFailureOrCause<A>(_: (_: E) => A, ifCause: (_: Cause<E>) => A): A {
@@ -160,7 +202,10 @@ export class Then<E> extends Cause<E> {
 
   equals(that: any): boolean {
     if (that instanceof Then) {
-      return (this.left.equals(that.left) && this.right.equals(that.right)) || (this.left.equals(that.right) && this.right.equals(that.left))
+      return (
+        (this.left.equals(that.left) && this.right.equals(that.right)) ||
+        (this.left.equals(that.right) && this.right.equals(that.left))
+      )
     } else {
       return false
     }
@@ -177,8 +222,17 @@ export class Both<E> extends Cause<E> {
   left: Cause<E>
   right: Cause<E>
 
-  fold<A>(ifFail: (error: E) => A, ifDie: (reason: unknown) => A, ifInterrupt: () => A, ifThen: (left: A, right: A) => A, ifBoth: (left: A, right: A) => A): A {
-    return ifBoth(this.left.fold(ifFail, ifDie, ifInterrupt, ifThen, ifBoth), this.right.fold(ifFail, ifDie, ifInterrupt, ifThen, ifBoth))
+  fold<A>(
+    ifFail: (error: E) => A,
+    ifDie: (reason: unknown) => A,
+    ifInterrupt: () => A,
+    ifThen: (left: A, right: A) => A,
+    ifBoth: (left: A, right: A) => A
+  ): A {
+    return ifBoth(
+      this.left.fold(ifFail, ifDie, ifInterrupt, ifThen, ifBoth),
+      this.right.fold(ifFail, ifDie, ifInterrupt, ifThen, ifBoth)
+    )
   }
 
   foldFailureOrCause<A>(_: (_: E) => A, ifCause: (_: Cause<E>) => A): A {
@@ -191,7 +245,10 @@ export class Both<E> extends Cause<E> {
 
   equals(that: any): boolean {
     if (that instanceof Both) {
-      return (this.left.equals(that.left) && this.right.equals(that.right)) || (this.left.equals(that.right) && this.right.equals(that.left))
+      return (
+        (this.left.equals(that.left) && this.right.equals(that.right)) ||
+        (this.left.equals(that.right) && this.right.equals(that.left))
+      )
     } else {
       return false
     }
