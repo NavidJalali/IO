@@ -1,3 +1,6 @@
 import { IO } from './IO'
+  
 
-IO.succeed(() => console.log("hi!")).forever().unsafeRun()
+IO.unit().unsafeRun().then(console.log).catch(e => console.log(`ERROR ${e}`))
+
+

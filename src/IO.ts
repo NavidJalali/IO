@@ -1,4 +1,4 @@
-import { Both, Cause, Die, Fail, Then } from './models/Cause'
+import { Cause, Die, Fail } from './models/Cause'
 import { Exit } from './models/Exit'
 import { Fiber } from './models/Fiber'
 import { FiberContext } from './models/FiberContext'
@@ -10,9 +10,12 @@ import {
 import { Tag, Tags } from './models/Tag'
 
 abstract class IO<E, A> {
+
+  private static __unit__: IO<never, void> | null = null
+
   abstract tag: Tag
 
-  static async<A1>(register: (_: (_: A1) => any) => any): IO<never, A1> {
+  static async<E1, A1>(register: (_: (_: IO<E1, A1>) => any) => any): IO<never, A1> {
     return new Async(register)
   }
 
@@ -31,7 +34,10 @@ abstract class IO<E, A> {
   }
 
   static unit(): IO<never, void> {
-    return new Succeed(() => {})
+    if (IO.__unit__ === null) {
+      IO.__unit__ = new Succeed(() => { })
+    }
+    return IO.__unit__
   }
 
   static fail<E1>(error: () => E1): IO<E1, never> {
@@ -48,6 +54,10 @@ abstract class IO<E, A> {
 
   static failCausePure<E1>(error: Cause<E1>): IO<E1, never> {
     return new Failure(() => error)
+  }
+
+  static printLine(line: any): IO<never, void> {
+    return IO.succeed(() => console.log(line))
   }
 
   static poll<E1, A1>(
@@ -71,14 +81,13 @@ abstract class IO<E, A> {
   ): IO<E1, A1> {
     return IO.succeedNow(executor)
       .flatMap(exec =>
-        IO.async<Exit<E1, A1>>(complete =>
+        IO.async<E1, A1>(complete =>
           exec(
-            a => complete(Exit.succeed(a)),
-            e => complete(Exit.fail(e))
+            a => complete(IO.succeedNow(a)),
+            e => complete(IO.failPure(e))
           )
         )
       )
-      .flatMap(IO.fromExit)
   }
 
   static fromExit<E1, A1>(exit: Exit<E1, A1>): IO<E1, A1> {
@@ -103,13 +112,12 @@ abstract class IO<E, A> {
   static fromPromise<B>(promise: () => Promise<B>): IO<unknown, B> {
     return IO.succeed(promise)
       .flatMap(p =>
-        IO.async<Exit<unknown, B>>(complete =>
+        IO.async<unknown, B>(complete =>
           p
-            .then(result => complete(Exit.succeed(result)))
-            .catch(error => complete(Exit.fail(error)))
+            .then(result => complete(IO.succeedNow(result)))
+            .catch(error => complete(IO.fail(error)))
         )
       )
-      .flatMap(IO.fromExit)
   }
 
   static scheduleOnce<E1, A1>(effect: IO<E1, A1>): (ms: number) => IO<E1, A1> {
@@ -127,7 +135,7 @@ abstract class IO<E, A> {
   static sleep(ms: number): IO<never, void> {
     return IO.async(callback => {
       setTimeout(() => {
-        callback()
+        callback(IO.unit())
       }, ms)
     })
   }
@@ -159,8 +167,25 @@ abstract class IO<E, A> {
     )
   }
 
+  exit(): IO<never, Exit<E, A>> {
+    return this.foldCause<Exit<E, A>>(
+      cause => Exit.failCause(cause),
+      a => Exit.succeed(a)
+    )
+  }
+
   flatMap<E1, A1>(f: (_: A) => IO<E1, A1>): IO<E | E1, A1> {
     return new FlatMap(this, f)
+  }
+
+  flatten(): A extends IO<infer E1, infer A1> ? IO<E | E1, A1> : never {
+    return this.flatMap(a => {
+      if (a instanceof IO) {
+        return a
+      } else {
+        throw new Error(`${a} is not an IO`)
+      }
+    }) as any
   }
 
   fold<B>(failure: (_: E) => B, success: (_: A) => B): IO<never, B> {
@@ -184,41 +209,7 @@ abstract class IO<E, A> {
     failure: (_: E) => IO<P, Q>,
     success: (_: A) => IO<P, Q>
   ): IO<P, Q> {
-    return this.foldCauseIO(
-      cause =>
-        cause.fold(
-          e => failure(e.error),
-          die => IO.failCause(() => die),
-          interrupt => IO.failCause(() => interrupt),
-          then =>
-            IO.failCause(() => then.left)
-              .foldIO(failure, success)
-              .foldCauseIO(
-                left =>
-                  IO.failCause(() => then.right)
-                    .foldIO(failure, success)
-                    .foldCauseIO(
-                      right => IO.failCause(() => new Then(left, right)),
-                      IO.succeedNow
-                    ),
-                IO.succeedNow
-              ),
-          both =>
-            IO.failCause(() => both.left)
-              .foldIO(failure, success)
-              .foldCauseIO(
-                left =>
-                  IO.failCause(() => both.right)
-                    .foldIO(failure, success)
-                    .foldCauseIO(
-                      right => IO.failCause(() => new Both(left, right)),
-                      IO.succeedNow
-                    ),
-                IO.succeedNow
-              )
-        ),
-      success
-    )
+    return this.foldCauseIO(cause => cause.foldFailureOrCause(failure, _ => IO.failCausePure(_ as Cause<never>)), success)
   }
 
   foldCauseIO<P, Q>(
@@ -291,13 +282,17 @@ abstract class IO<E, A> {
     return this.foldIO(e => IO.failCause(() => new Die(e)), IO.succeedNow)
   }
 
+  onExit(f: (_: Exit<E, A>) => IO<never, any>): IO<E, A> {
+    return this.tapBothCauseIO(cause => f(Exit.failCause(cause)), a => f(Exit.succeed(a)))
+  }
+
   race<E1, A1>(that: IO<E1, A1>): IO<E | E1, A | A1> {
     return this.fork().zip(that.fork()).flatMap(
-      tupled => IO.async<A | A1>(complete => {
+      tupled => IO.async<never, A | A1>(complete => {
         {
           const [f1, f2] = tupled
-          const self = f1.join().tap(a => f2.interrupt().tap(_ => complete(a)))
-          const other = f2.join().tapIO(a1 => f1.interrupt().tap(_ => complete(a1)))
+          const self = f1.join().tapIO(a => f2.interrupt().tap(_ => complete(IO.succeedNow(a))))
+          const other = f2.join().tapIO(a1 => f1.interrupt().tap(_ => complete(IO.succeedNow(a1))))
           self.zipPar(other).unsafeRunFiber()
         }
       })
@@ -320,76 +315,33 @@ abstract class IO<E, A> {
     return this.flatMap(a => f(a).asPure(a))
   }
 
-  tapBoth<A1, A2>(onSuccess: (_: A) => A1, onFailure: (_: E) => A2): IO<E, A> {
+  tapBoth<A1, A2>(onFailure: (_: E) => A2, onSuccess: (_: A) => A1): IO<E, A> {
     return this.tapBothIO(
-      a => IO.succeed(() => onSuccess(a)),
-      e => IO.succeed(() => onFailure(e))
+      e => IO.succeed(() => onFailure(e)),
+      a => IO.succeed(() => onSuccess(a))
     )
   }
 
   tapBothIO<E1, A1, E2, A2>(
-    onSuccess: (_: A) => IO<E1, A1>,
-    onFailure: (_: E) => IO<E2, A2>
+    onFailure: (_: E) => IO<E2, A2>,
+    onSuccess: (_: A) => IO<E1, A1>
   ): IO<E | E1 | E2, A> {
-    const computeIfError = <B, C>(
-      cause: Cause<B>,
-      f: (_: B) => C,
-      g: (_: Cause<B>) => C,
-      monoidC: (a: C, b: C) => C
-    ): C =>
-      cause.fold(
-        fail => f(fail.error),
-        die => g(die),
-        interrupt => g(interrupt),
-        then =>
-          monoidC(
-            computeIfError(then.left, f, g, monoidC),
-            computeIfError(then.right, f, g, monoidC)
-          ),
-        both =>
-          monoidC(
-            computeIfError(both.left, f, g, monoidC),
-            computeIfError(both.right, f, g, monoidC)
-          )
-      )
-    return this.tapBothCauseIO(onSuccess, cause =>
-      cause
-        .fold(
-          fail => onFailure(fail.error).ignore(),
-          _ => IO.unit(),
-          _ => IO.unit(),
-          then =>
-            computeIfError(
-              then,
-              e => onFailure(e).ignore(),
-              _ => IO.unit(),
-              (a, b) => a.zipPar(b).ignore()
-            ),
-          both =>
-            computeIfError(
-              both,
-              e => onFailure(e).ignore(),
-              _ => IO.unit(),
-              (a, b) => a.zipPar(b).ignore()
-            )
-        )
-        .zipRight(IO.failCausePure(cause))
-    )
+    return this.tapBothCauseIO(cause => cause.foldFailureOrCause(onFailure, _ => IO.failCausePure(_ as Cause<never>)), onSuccess)
   }
 
   tapBothCause<A1, A2>(
-    onSuccess: (_: A) => A1,
-    onFailure: (_: Cause<E>) => A2
+    onFailure: (_: Cause<E>) => A2,
+    onSuccess: (_: A) => A1
   ): IO<E, A> {
     return this.tapBothCauseIO(
+      cause => IO.succeed(() => onFailure(cause)),
       a => IO.succeed(() => onSuccess(a)),
-      cause => IO.succeed(() => onFailure(cause))
     )
   }
 
   tapBothCauseIO<E1, A1, E2, A2>(
-    onSuccess: (_: A) => IO<E1, A1>,
-    onFailure: (_: Cause<E>) => IO<E2, A2>
+    onFailure: (_: Cause<E>) => IO<E2, A2>,
+    onSuccess: (_: A) => IO<E1, A1>
   ): IO<E | E1 | E2, A> {
     return this.foldCauseIO<E | E1 | E2, A>(
       cause => onFailure(cause).zipRight(IO.failCausePure(cause)),
@@ -523,19 +475,18 @@ export class Fold<E, A, P, Q> extends IO<P, Q> {
   onFailure: (_: Cause<E>) => IO<P, Q>
 
   toString(): string {
-    return `Fold(${this.io.toString()}, onSuccess = ${
-      this.onSuccess
-    }, onFailure = Fn)`
+    return `Fold(${this.io.toString()}, onSuccess = ${this.onSuccess
+      }, onFailure = Fn)`
   }
 }
 
-export class Async<A> extends IO<never, A> {
-  constructor(register: (_: (_: A) => any) => any) {
+export class Async<E, A> extends IO<never, A> {
+  constructor(register: (_: (_: IO<E, A>) => any) => any) {
     super()
     this.register = register
   }
 
-  register: (_: (_: A) => any) => any
+  register: (_: (_: IO<E, A>) => any) => any
 
   tag: Tag = Tags.async
 
@@ -572,9 +523,8 @@ export class SetInterruptStatus<E, A> extends IO<E, A> {
   tag: Tag = Tags.setInterruptStatus
 
   toString(): string {
-    return `SetInterrupt(${this.effect.toString()}, ${
-      this.status.isInterruptible
-    })`
+    return `SetInterrupt(${this.effect.toString()}, ${this.status.isInterruptible
+      })`
   }
 }
 

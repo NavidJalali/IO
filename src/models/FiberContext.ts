@@ -140,10 +140,10 @@ export class FiberContext<E, A> implements Fiber<E, A> {
               }
 
               case Tags.async: {
-                const async = currentIO as Async<any>
+                const async = currentIO as Async<any, any>
                 loop = false
-                async.register((a: any) => {
-                  currentIO = new SucceedNow(a)
+                async.register((a) => {
+                  currentIO = a
                   loop = true
                   suspend()
                 })
@@ -165,6 +165,8 @@ export class FiberContext<E, A> implements Fiber<E, A> {
               case Tags.fork: {
                 const fork = currentIO as Fork<any, any>
                 const fiber = new FiberContext(fork.effect)
+                this.children.set(fiber.fiberId, fiber)
+                fiber.executor.finally(() => this.children.delete(fiber.fiberId))
                 continueLoop(fiber)
                 break
               }
@@ -189,6 +191,7 @@ export class FiberContext<E, A> implements Fiber<E, A> {
   private interrupted = false
   private isInterrupting = false
   private isInterruptible = true
+  private children: Map<number, Fiber<any, any>> = new Map()
 
   private shouldInterrupt() {
     return this.interrupted && !this.isInterrupting && this.isInterruptible
@@ -202,16 +205,18 @@ export class FiberContext<E, A> implements Fiber<E, A> {
   private complete(result: Exit<E, A>) {
     switch (this.fiberState.state) {
       case 'done': {
-        throw new Error(`Internal defect: Fiber ${
-          this.fiberId
-        } cannot be completed multiple times. 
+        throw new Error(`Internal defect: Fiber ${this.fiberId
+          } cannot be completed multiple times. 
         Fiber state was ${JSON.stringify(
-          this.fiberState
-        )}. Attempted to complete with ${JSON.stringify(result)}`)
+            this.fiberState
+          )}. Attempted to complete with ${JSON.stringify(result)}`)
       }
 
       case 'running': {
         this.fiberState.callbacks.foreach(callback => callback(result))
+        this.children.forEach((value: Fiber<any, any>) => {
+          value.interrupt().unsafeRun()
+        })
         this.fiberState = {
           state: 'done',
           result
@@ -246,8 +251,9 @@ export class FiberContext<E, A> implements Fiber<E, A> {
   }
 
   join(): IO<E, A> {
-    return IO.async<Exit<E, A>>(callback => this.await(callback)).flatMap(
-      IO.fromExit
-    )
+    return IO.async<never, Exit<E, A>>(callback => this.await(exit => callback(IO.succeed(() => exit))))
+      .flatMap(
+        IO.fromExit
+      )
   }
 }

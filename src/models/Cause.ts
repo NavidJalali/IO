@@ -1,11 +1,15 @@
 export abstract class Cause<E> {
   abstract fold<A>(
-    ifFail: (_: Fail<E>) => A,
-    ifDie: (_: Die) => A,
-    ifInterrupt: (_: Interrupt) => A,
-    ifThen: (_: Then<E>) => A,
-    ifBoth: (_: Both<E>) => A
+    ifFail: (error: E) => A,
+    ifDie: (reason: unknown) => A,
+    ifInterrupt: () => A,
+    ifThen: (left: A, right: A) => A,
+    ifBoth: (left: A, right: A) => A
   ): A
+
+  as<A>(a: A): Cause<A> {
+    return this.map(_ => a)
+  }
 
   abstract map<A>(f: (_: E) => A): Cause<A>
 
@@ -36,6 +40,14 @@ export abstract class Cause<E> {
   both(that: Cause<E>): Cause<E> {
     return new Both(this, that)
   }
+
+  abstract equals(that: any): boolean
+
+  failureOption(): E | null {
+    return this.fold(_ => _, _ => null, () => null, (_, __) => null, (_, __) => null)
+  }
+
+  abstract foldFailureOrCause<A>(ifFailure: (_: E) => A, ifCause: (_: Cause<E>) => A): A
 }
 
 export class Die extends Cause<never> {
@@ -46,18 +58,24 @@ export class Die extends Cause<never> {
 
   reason: unknown
 
-  fold<A>(
-    _: (_: Fail<never>) => A,
-    ifDie: (_: Die) => A,
-    __: (_: Interrupt) => A,
-    ___: (_: Then<never>) => A,
-    ____: (_: Both<never>) => A
-  ): A {
-    return ifDie(this)
+  fold<A>(_: (_: never) => A, ifDie: (reason: unknown) => A, __: () => A, ___: (left: A, __: A) => A, ____: (_: A, __: A) => A): A {
+    return ifDie(this.reason)
+  }
+
+  foldFailureOrCause<A>(_: (_: never) => A, ifCause: (_: Cause<never>) => A): A {
+    return ifCause(this)
   }
 
   map<A>(_: (_: never) => A): Cause<A> {
     return this as Cause<A>
+  }
+
+  equals(that: any): boolean {
+    if (that instanceof Die) {
+      return that.reason === this.reason
+    } else {
+      return false
+    }
   }
 }
 
@@ -69,18 +87,24 @@ export class Fail<E> extends Cause<E> {
 
   error: E
 
-  fold<A>(
-    ifFail: (_: Fail<E>) => A,
-    _: (_: Die) => A,
-    __: (_: Interrupt) => A,
-    ___: (_: Then<E>) => A,
-    ____: (_: Both<E>) => A
-  ): A {
-    return ifFail(this)
+  fold<A>(ifFail: (error: E) => A, _: (reason: unknown) => A, __: () => A, ___: (left: A, right: A) => A, ____: (left: A, right: A) => A): A {
+    return ifFail(this.error)
+  }
+
+  foldFailureOrCause<A>(ifFailure: (_: E) => A, _: (_: Cause<never>) => A): A {
+    return ifFailure(this.error)
   }
 
   map<A>(f: (_: E) => A): Cause<A> {
     return new Fail(f(this.error))
+  }
+
+  equals(that: any): boolean {
+    if (that instanceof Fail) {
+      return that.error === this.error
+    } else {
+      return false
+    }
   }
 }
 
@@ -91,18 +115,24 @@ export class Interrupt extends Cause<never> {
 
   error = null
 
-  fold<A>(
-    _: (_: Fail<never>) => A,
-    __: (_: Die) => A,
-    ifInterrupt: (_: Interrupt) => A,
-    ___: (_: Then<never>) => A,
-    ____: (_: Both<never>) => A
-  ): A {
-    return ifInterrupt(this)
+  fold<A>(_: (error: never) => A, __: (reason: unknown) => A, ifInterrupt: () => A, ___: (left: A, right: A) => A, ____: (left: A, right: A) => A): A {
+    return ifInterrupt()
+  }
+
+  foldFailureOrCause<A>(_: (_: never) => A, ifCause: (_: Cause<never>) => A): A {
+    return ifCause(this)
   }
 
   map<A>(_: (_: never) => A): Cause<A> {
     return this as Cause<A>
+  }
+
+  equals(that: any): boolean {
+    if (that instanceof Interrupt) {
+      return that.error === that.error
+    } else {
+      return false
+    }
   }
 }
 
@@ -116,18 +146,24 @@ export class Then<E> extends Cause<E> {
   left: Cause<E>
   right: Cause<E>
 
-  fold<A>(
-    _: (_: Fail<E>) => A,
-    __: (_: Die) => A,
-    ___: (_: Interrupt) => A,
-    ifThen: (_: Then<E>) => A,
-    ____: (_: Both<E>) => A
-  ): A {
-    return ifThen(this)
+  fold<A>(ifFail: (error: E) => A, ifDie: (reason: unknown) => A, ifInterrupt: () => A, ifThen: (left: A, right: A) => A, ifBoth: (left: A, right: A) => A): A {
+    return ifThen(this.left.fold(ifFail, ifDie, ifInterrupt, ifThen, ifBoth), this.right.fold(ifFail, ifDie, ifInterrupt, ifThen, ifBoth))
+  }
+
+  foldFailureOrCause<A>(_: (_: E) => A, ifCause: (_: Cause<E>) => A): A {
+    return ifCause(this)
   }
 
   map<A>(f: (_: E) => A): Cause<A> {
     return new Then(this.left.map(f), this.right.map(f))
+  }
+
+  equals(that: any): boolean {
+    if (that instanceof Then) {
+      return (this.left.equals(that.left) && this.right.equals(that.right)) || (this.left.equals(that.right) && this.right.equals(that.left))
+    } else {
+      return false
+    }
   }
 }
 
@@ -141,17 +177,23 @@ export class Both<E> extends Cause<E> {
   left: Cause<E>
   right: Cause<E>
 
-  fold<A>(
-    _: (_: Fail<E>) => A,
-    __: (_: Die) => A,
-    ___: (_: Interrupt) => A,
-    ____: (_: Then<E>) => A,
-    ifBoth: (_: Both<E>) => A
-  ): A {
-    return ifBoth(this)
+  fold<A>(ifFail: (error: E) => A, ifDie: (reason: unknown) => A, ifInterrupt: () => A, ifThen: (left: A, right: A) => A, ifBoth: (left: A, right: A) => A): A {
+    return ifBoth(this.left.fold(ifFail, ifDie, ifInterrupt, ifThen, ifBoth), this.right.fold(ifFail, ifDie, ifInterrupt, ifThen, ifBoth))
+  }
+
+  foldFailureOrCause<A>(_: (_: E) => A, ifCause: (_: Cause<E>) => A): A {
+    return ifCause(this)
   }
 
   map<A>(f: (_: E) => A): Cause<A> {
     return new Both(this.left.map(f), this.right.map(f))
+  }
+
+  equals(that: any): boolean {
+    if (that instanceof Both) {
+      return (this.left.equals(that.left) && this.right.equals(that.right)) || (this.left.equals(that.right) && this.right.equals(that.left))
+    } else {
+      return false
+    }
   }
 }

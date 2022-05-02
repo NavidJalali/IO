@@ -18,6 +18,7 @@ export abstract class List<A> {
   abstract map<B>(f: (_: A) => B): List<B>
   abstract flatMap<B>(f: (_: A) => List<B>): List<B>
   abstract length: number
+  abstract toString(): string
 
   last(): A {
     if (this.lastCons) {
@@ -142,6 +143,10 @@ export class Cons<A> extends List<A> {
   fold<B>(ifCons: (x: A, xs: List<A>) => B, _: () => B): B {
     return ifCons(this.a, this.as)
   }
+
+  toString(): string {
+    return `List(${this.toArray().join(', ')})`
+  }
 }
 
 export class Nil extends List<never> {
@@ -179,5 +184,9 @@ export class Nil extends List<never> {
 
   fold<B>(_: (x: never, xs: List<never>) => B, ifNil: () => B): B {
     return ifNil()
+  }
+
+  toString(): string {
+    return 'List()'
   }
 }
