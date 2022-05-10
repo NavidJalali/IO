@@ -145,7 +145,7 @@ export class Cons<A> extends List<A> {
   }
 
   toString(): string {
-    return `List(${this.toArray().join(', ')})`
+    return `List(${this.toArray().map(_ => JSON.stringify(_)).join(', ')})`
   }
 }
 

@@ -8,6 +8,7 @@ import {
   Uninterruptible
 } from './models/InterruptStatus'
 import { Tag, Tags } from './models/Tag'
+import { TimeoutError } from './models/TimeoutError'
 
 abstract class IO<E, A> {
   private static __unit__: IO<never, void> | null = null
@@ -139,12 +140,44 @@ abstract class IO<E, A> {
     })
   }
 
+  static collectAll<E1, A1>(ios: IO<E1, A1>[]): IO<E1, A1[]> {
+    if (ios.length === 0) {
+      return IO.succeedNow([])
+    } else if (ios.length === 1) {
+      const io = ios[0]!
+      return io.map(_ => [_])
+    } else {
+      const [head, ...tail] = ios
+      return new FlatMap(head!, a => IO.collectAll(tail).map(as => [a, ...as]))
+    }
+  }
+
+  static collectAllPar<E1, A1>(ios: IO<E1, A1>[]): IO<E1, A1[]> {
+    if (ios.length === 0) {
+      return IO.succeedNow([])
+    } else if (ios.length === 1) {
+      const io = ios[0]!
+      return io.map(_ => [_])
+    } else {
+      const [head, ...tail] = ios
+      return head!.zipPar(IO.collectAllPar(tail)).map(as => [as[0], ...as[1]])
+    }
+  }
+
+  static foreach<E1, A1, B>(xs: A1[], f: (_: A1) => IO<E1, B>): IO<E1, B[]> {
+    return IO.collectAll(xs.map(f))
+  }
+
+  static foreachPar<E1, A1, B>(xs: A1[], f: (_: A1) => IO<E1, B>): IO<E1, B[]> {
+    return IO.collectAllPar(xs.map(f))
+  }
+
   private static succeedNow<B>(value: B): IO<never, B> {
     return new SucceedNow(value)
   }
 
-  as<B>(that: () => B): IO<E, B> {
-    return this.map(_ => that())
+  as<B>(that: B): IO<E, B> {
+    return this.map(_ => that)
   }
 
   asPure<B>(b: B): IO<E, B> {
@@ -298,15 +331,17 @@ abstract class IO<E, A> {
     return this.fork()
       .zip(that.fork())
       .flatMap(tupled =>
-        IO.async<never, A | A1>(complete => {
+        IO.async<E | E1, A | A1>(complete => {
           {
             const [f1, f2] = tupled
-            const self = f1
-              .join()
-              .tapIO(a => f2.interrupt().tap(_ => complete(IO.succeedNow(a))))
-            const other = f2
-              .join()
-              .tapIO(a1 => f1.interrupt().tap(_ => complete(IO.succeedNow(a1))))
+            const self = f1.join().tapBothCauseIO(
+              cause => IO.failCausePure(cause),
+              a => f2.interrupt().tap(_ => complete(IO.succeedNow(a)))
+            )
+            const other = f2.join().tapBothCauseIO(
+              cause => IO.failCausePure(cause),
+              a1 => f1.interrupt().tap(_ => complete(IO.succeedNow(a1)))
+            )
             self.zipPar(other).unsafeRunFiber()
           }
         })
@@ -367,6 +402,38 @@ abstract class IO<E, A> {
       cause => onFailure(cause).zipRight(IO.failCausePure(cause)),
       success => onSuccess(success).zipRight(IO.succeedNow(success))
     )
+  }
+
+  timeout(ms: number): IO<E | TimeoutError, A> {
+    return this.fork()
+      .zip(IO.sleep(ms).fork())
+      .flatMap(tupled =>
+        IO.async<E | TimeoutError, A>(complete => {
+          {
+            const [f1, f2] = tupled
+            const self = f1.join().tapBothCauseIO(
+              cause => f2.interrupt().tap(_ => complete(IO.failCausePure(cause))),
+              a => f2.interrupt().tap(_ => complete(IO.succeedNow(a)))
+            )
+
+            const other = f2.join().tapIO(
+              () =>
+                f1
+                  .interrupt()
+                  .tap(_ =>
+                    complete(
+                      IO.failPure(
+                        new TimeoutError(
+                          `${this} timed out after ${ms} milliseconds.`
+                        )
+                      )
+                    )
+                  )
+            )
+            self.zipPar(other).unsafeRunFiber()
+          }
+        })
+      )
   }
 
   zip<E1, A1>(that: IO<E1, A1>): IO<E | E1, [A, A1]> {
@@ -497,7 +564,7 @@ export class Fold<E, A, P, Q> extends IO<P, Q> {
   toString(): string {
     return `Fold(${this.io.toString()}, onSuccess = ${
       this.onSuccess
-    }, onFailure = Fn)`
+    }, onFailure = ${this.onFailure})`
   }
 }
 
@@ -512,7 +579,7 @@ export class Async<E, A> extends IO<never, A> {
   tag: Tag = Tags.async
 
   toString(): string {
-    return `Async(Fn)`
+    return `Async(${this.register})`
   }
 }
 
@@ -561,7 +628,7 @@ export class Failure<E> extends IO<E, never> {
   tag: Tag = Tags.failure
 
   toString(): string {
-    return `Failure(Fn)`
+    return `Failure(${this.cause})`
   }
 }
 

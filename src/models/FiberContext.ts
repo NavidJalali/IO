@@ -94,7 +94,6 @@ export class FiberContext<E, A> implements Fiber<E, A> {
           } else {
             stack.push(new Continuation(_ => currentIO))
           }
-
           currentIO = IO.failCausePure(new Interrupt())
         } else {
           try {
@@ -120,10 +119,7 @@ export class FiberContext<E, A> implements Fiber<E, A> {
               case Tags.failure: {
                 const cause = (currentIO as Failure<any>).cause()
                 const errorHandler = findNextErrorHandler()
-                if (
-                  errorHandler === null ||
-                  errorHandler.errorHandler === null
-                ) {
+                if (errorHandler === null || errorHandler.errorHandler === null) {
                   this.complete(Exit.failCause(cause as Cause<E>))
                   loop = false
                 } else {
